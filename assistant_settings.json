@@ -1,0 +1,6 @@
+{
+  "assistant_name": "nova",
+  "voice_speed": "normal",
+  "alert_volume": 1.0,
+  "auto_start": false
+}
