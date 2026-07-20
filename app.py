@@ -10,6 +10,31 @@ import time
 import streamlit as st
 import threading
 import streamlit.components.v1 as components
+import os
+
+# ── CNN Model Loading ───────────────────────────────────────
+@st.cache_resource
+def load_cnn_model():
+    """Load the pre-trained CNN model for eye state classification."""
+    try:
+        from tensorflow.keras.models import load_model
+        model_path = "eye_state_model.h5"
+        if os.path.exists(model_path):
+            model = load_model(model_path)
+            logging.info("CNN model loaded successfully")
+            return model
+        else:
+            logging.warning(f"Model file not found: {model_path}")
+            st.error("CNN model file not found. Using geometric detection only.")
+            return None
+    except ImportError:
+        logging.warning("TensorFlow not installed. CNN features unavailable.")
+        st.warning("TensorFlow not installed. Using geometric detection only.")
+        return None
+    except Exception as e:
+        logging.error(f"Error loading CNN model: {e}")
+        st.error(f"Error loading CNN model: {e}")
+        return None
 
 # ── Page Config ───────────────────────────────────────────
 st.set_page_config(
@@ -182,7 +207,9 @@ if "state" not in st.session_state:
         "drowsy_count":     0,
         "nova_status":      "👂 Listening for Nova...",
         "voice_log":        [],
-        "last_heard":       ""
+        "last_heard":       "",
+        "left_cnn_conf":    0.0,
+        "right_cnn_conf":   0.0
     }
 
 state = st.session_state.state
@@ -195,6 +222,10 @@ if "voice_assistant" not in st.session_state:
         st.session_state.voice_assistant = VoiceAssistant(state)
     except Exception as e:
         logging.error(f"Voice assistant error: {e}")
+
+# CNN Model Init
+if "cnn_model" not in st.session_state:
+    st.session_state.cnn_model = load_cnn_model()
 
 # ── Audio setup ───────────────────────────────────────────
 pygame.mixer.init()
@@ -276,11 +307,13 @@ with left_col:
     metrics_container = st.empty()
     # Render initial metrics
     with metrics_container.container():
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.markdown(f"<div class='metric-card'><div class='metric-label'>👁 EAR</div><div class='metric-value'>0.00</div></div>", unsafe_allow_html=True)
         m2.markdown(f"<div class='metric-card'><div class='metric-label'>👄 MAR</div><div class='metric-value'>0.00</div></div>", unsafe_allow_html=True)
-        m3.markdown(f"<div class='metric-card'><div class='metric-label'>⚠️ Risk</div><div class='metric-value status-alert'>None</div></div>", unsafe_allow_html=True)
-        m4.markdown(f"<div class='metric-card'><div class='metric-label'>😴 Alerts</div><div class='metric-value'>0</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='metric-card'><div class='metric-label'>👁 CNN L</div><div class='metric-value'>0%</div></div>", unsafe_allow_html=True)
+        m4.markdown(f"<div class='metric-card'><div class='metric-label'>👁 CNN R</div><div class='metric-value'>0%</div></div>", unsafe_allow_html=True)
+        m5.markdown(f"<div class='metric-card'><div class='metric-label'>⚠️ Risk</div><div class='metric-value status-alert'>None</div></div>", unsafe_allow_html=True)
+        m6.markdown(f"<div class='metric-card'><div class='metric-label'>😴 Alerts</div><div class='metric-value'>0</div></div>", unsafe_allow_html=True)
     
     alert_banner_container = st.empty()
     alert_banner_container.markdown(f"<div class='alert-safe'>✅ Driver is alert and focused.</div>", unsafe_allow_html=True)
@@ -366,6 +399,49 @@ def mouth_aspect_ratio(mouth_points, landmarks, w, h):
     D = distance.euclidean(pt(mouth_points[0]), pt(mouth_points[4]))
     return (A + B + C) / (2.0 * D)
 
+def extract_eye_region(frame, eye_points, landmarks, w, h, padding=10):
+    """Extract eye region from frame using MediaPipe landmarks."""
+    def pt(idx):
+        lm = landmarks[idx]
+        return np.array([lm.x * w, lm.y * h])
+    
+    # Get all eye landmark points
+    points = np.array([pt(idx) for idx in eye_points])
+    
+    # Calculate bounding box with padding
+    x_min = int(max(0, np.min(points[:, 0]) - padding))
+    x_max = int(min(w, np.max(points[:, 0]) + padding))
+    y_min = int(max(0, np.min(points[:, 1]) - padding))
+    y_max = int(min(h, np.max(points[:, 1]) + padding))
+    
+    # Extract eye region
+    eye_region = frame[y_min:y_max, x_min:x_max]
+    
+    return eye_region
+
+def preprocess_eye_for_cnn(eye_region):
+    """Preprocess eye region for CNN input (24x24 grayscale normalized)."""
+    try:
+        # Convert to grayscale if needed
+        if len(eye_region.shape) == 3:
+            eye_gray = cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY)
+        else:
+            eye_gray = eye_region
+        
+        # Resize to 24x24
+        eye_resized = cv2.resize(eye_gray, (24, 24))
+        
+        # Normalize to [0, 1]
+        eye_normalized = eye_resized.astype('float32') / 255.0
+        
+        # Reshape to (1, 24, 24, 1) for CNN input
+        eye_input = eye_normalized.reshape(1, 24, 24, 1)
+        
+        return eye_input
+    except Exception as e:
+        logging.error(f"Error preprocessing eye region: {e}")
+        return None
+
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     max_num_faces=1, refine_landmarks=True,
@@ -435,13 +511,54 @@ if state.get("detection_active"):
             state["current_ear"] = avg_ear
             state["current_mar"] = mar
             
+            # CNN Prediction (if model available)
+            left_cnn_conf = 0.0
+            right_cnn_conf = 0.0
+            cnn_alert = False
+            
+            if st.session_state.get("cnn_model") is not None:
+                try:
+                    # Extract eye regions
+                    left_eye_region = extract_eye_region(frame, LEFT_EYE, lm, w, h)
+                    right_eye_region = extract_eye_region(frame, RIGHT_EYE, lm, w, h)
+                    
+                    # Preprocess for CNN
+                    left_eye_input = preprocess_eye_for_cnn(left_eye_region)
+                    right_eye_input = preprocess_eye_for_cnn(right_eye_region)
+                    
+                    # Run CNN predictions
+                    if left_eye_input is not None and right_eye_input is not None:
+                        cnn_model = st.session_state.cnn_model
+                        left_pred = cnn_model.predict(left_eye_input, verbose=0)[0]
+                        right_pred = cnn_model.predict(right_eye_input, verbose=0)[0]
+                        
+                        # Get confidence for "closed" class (index 1)
+                        left_cnn_conf = left_pred[1] * 100  # Convert to percentage
+                        right_cnn_conf = right_pred[1] * 100
+                        
+                        # Store in state for UI display
+                        state["left_cnn_conf"] = left_cnn_conf
+                        state["right_cnn_conf"] = right_cnn_conf
+                        
+                        # CNN alert if both eyes have high closed confidence
+                        if left_cnn_conf > 70 and right_cnn_conf > 70:
+                            cnn_alert = True
+                except Exception as e:
+                    logging.error(f"CNN prediction error: {e}")
+                    state["left_cnn_conf"] = 0.0
+                    state["right_cnn_conf"] = 0.0
+            else:
+                state["left_cnn_conf"] = 0.0
+                state["right_cnn_conf"] = 0.0
+            
             # Draw landmarks gently
             for idx in LEFT_EYE + RIGHT_EYE + MOUTH:
                 x = int(lm[idx].x * w)
                 y = int(lm[idx].y * h)
                 cv2.circle(frame, (x, y), 1, (0, 212, 255), -1)
                 
-            if avg_ear < EAR_THRESHOLD:
+            # Hybrid decision logic: trigger alert if EAR threshold OR CNN detects closed eyes
+            if avg_ear < EAR_THRESHOLD or cnn_alert:
                 ear_counter += 1
                 if ear_counter >= FRAME_THRESH:
                     status_text = "DROWSY — EYES CLOSED!"
@@ -488,15 +605,23 @@ if state.get("detection_active"):
         if frame_count % 5 == 0:
             risk_label, risk_class = get_risk_level(avg_ear) if results.multi_face_landmarks else ("Unknown", "status-warn")
             
+            # Get CNN confidence scores from state
+            left_cnn = state.get("left_cnn_conf", 0.0)
+            right_cnn = state.get("right_cnn_conf", 0.0)
+            
             with metrics_container.container():
-                m1, m2, m3, m4 = st.columns(4)
+                m1, m2, m3, m4, m5, m6 = st.columns(6)
                 ear_color = "status-drowsy" if avg_ear < EAR_THRESHOLD and avg_ear > 0 else "status-alert"
                 mar_color = "status-drowsy" if mar > MAR_THRESHOLD else "status-alert"
+                cnn_left_color = "status-drowsy" if left_cnn > 70 else "status-alert"
+                cnn_right_color = "status-drowsy" if right_cnn > 70 else "status-alert"
                 
                 m1.markdown(f"<div class='metric-card'><div class='metric-label'>👁 EAR</div><div class='metric-value {ear_color}'>{avg_ear:.3f}</div></div>", unsafe_allow_html=True)
                 m2.markdown(f"<div class='metric-card'><div class='metric-label'>👄 MAR</div><div class='metric-value {mar_color}'>{mar:.3f}</div></div>", unsafe_allow_html=True)
-                m3.markdown(f"<div class='metric-card'><div class='metric-label'>⚠️ Risk</div><div class='metric-value {risk_class}'>{risk_label}</div></div>", unsafe_allow_html=True)
-                m4.markdown(f"<div class='metric-card'><div class='metric-label'>😴 Alerts</div><div class='metric-value'>{state['drowsy_count']}</div></div>", unsafe_allow_html=True)
+                m3.markdown(f"<div class='metric-card'><div class='metric-label'>👁 CNN L</div><div class='metric-value {cnn_left_color}'>{left_cnn:.0f}%</div></div>", unsafe_allow_html=True)
+                m4.markdown(f"<div class='metric-card'><div class='metric-label'>👁 CNN R</div><div class='metric-value {cnn_right_color}'>{right_cnn:.0f}%</div></div>", unsafe_allow_html=True)
+                m5.markdown(f"<div class='metric-card'><div class='metric-label'>⚠️ Risk</div><div class='metric-value {risk_class}'>{risk_label}</div></div>", unsafe_allow_html=True)
+                m6.markdown(f"<div class='metric-card'><div class='metric-label'>😴 Alerts</div><div class='metric-value'>{state['drowsy_count']}</div></div>", unsafe_allow_html=True)
                 
             if not results.multi_face_landmarks:
                 alert_banner_container.markdown(f"<div class='alert-warning'>⚠️ Please face the camera. Nova cannot see you.</div>", unsafe_allow_html=True)
