@@ -50,6 +50,7 @@ class VoiceAssistant:
     
     def _load_vosk(self):
         try:
+            # pyrefly: ignore [missing-import]
             from vosk import Model, KaldiRecognizer
             import os
             model_path = "vosk-model-small-en-us"
@@ -197,6 +198,7 @@ class VoiceAssistant:
     
     def _check_vosk(self, audio) -> bool:
         try:
+            # pyrefly: ignore [missing-import]
             from vosk import KaldiRecognizer
             import json
             rec = KaldiRecognizer(self.vosk_model, 16000)
