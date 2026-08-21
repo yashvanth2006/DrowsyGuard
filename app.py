@@ -3,38 +3,13 @@ logging.getLogger('streamlit').setLevel(logging.WARNING)
 
 import cv2
 import numpy as np
-from scipy.spatial import distance
-import mediapipe as mp
 import pygame
 import time
 import streamlit as st
 import threading
 import streamlit.components.v1 as components
 import os
-
-# ── CNN Model Loading ───────────────────────────────────────
-@st.cache_resource
-def load_cnn_model():
-    """Load the pre-trained CNN model for eye state classification."""
-    try:
-        from tensorflow.keras.models import load_model
-        model_path = "eye_state_model.h5"
-        if os.path.exists(model_path):
-            model = load_model(model_path)
-            logging.info("CNN model loaded successfully")
-            return model
-        else:
-            logging.warning(f"Model file not found: {model_path}")
-            st.error("CNN model file not found. Using geometric detection only.")
-            return None
-    except ImportError:
-        logging.warning("TensorFlow not installed. CNN features unavailable.")
-        st.warning("TensorFlow not installed. Using geometric detection only.")
-        return None
-    except Exception as e:
-        logging.error(f"Error loading CNN model: {e}")
-        st.error(f"Error loading CNN model: {e}")
-        return None
+import config
 
 # ── Page Config ───────────────────────────────────────────
 st.set_page_config(
@@ -201,7 +176,7 @@ if "state" not in st.session_state:
         "paused":           False,
         "dismissed":        False,
         "pause_end":        0,
-        "current_ear":      0.32,
+        "current_ear":      config.DEFAULT_BASELINE_EAR,
         "current_mar":      0.45,
         "session_start":    None,
         "drowsy_count":     0,
@@ -213,7 +188,7 @@ if "state" not in st.session_state:
     }
 
 state = st.session_state.state
-ASSISTANT_NAME = "Nova"
+ASSISTANT_NAME = config.ASSISTANT_NAME
 
 # Voice Assistant Init
 if "voice_assistant" not in st.session_state:
@@ -223,17 +198,19 @@ if "voice_assistant" not in st.session_state:
     except Exception as e:
         logging.error(f"Voice assistant error: {e}")
 
-# CNN Model Init
-if "cnn_model" not in st.session_state:
-    st.session_state.cnn_model = load_cnn_model()
+# Detector Init
+if "detector" not in st.session_state:
+    from core.detector import DrowsyDetector
+    st.session_state.detector = DrowsyDetector()
+
+detector = st.session_state.detector
 
 # ── Audio setup ───────────────────────────────────────────
 pygame.mixer.init()
 
 def play_alert():
-    sample_rate = 44100
-    t     = np.linspace(0, 0.5, int(sample_rate * 0.5))
-    wave  = (np.sin(2 * np.pi * 1000 * t) * 32767).astype(np.int16)
+    t     = np.linspace(0, config.AUDIO_DURATION, int(config.AUDIO_SAMPLE_RATE * config.AUDIO_DURATION))
+    wave  = (np.sin(2 * np.pi * config.AUDIO_FREQ * t) * 32767).astype(np.int16)
     sound = pygame.sndarray.make_sound(np.column_stack([wave, wave]))
     sound.play()
 
@@ -276,22 +253,17 @@ with st.sidebar:
     """)
     
     with st.expander("⚙️ Settings"):
-        EAR_THRESHOLD = st.slider("EAR Threshold", 0.15, 0.35, 0.25)
-        MAR_THRESHOLD = st.slider("MAR Threshold", 0.50, 0.90, 0.75)
-        FRAME_THRESH = st.slider("Alert Sensitivity (Frames)", 10, 30, 20)
+        st.markdown("*Settings now managed by config.py and calibration.*")
     
     with st.expander("ℹ️ Project Info"):
         st.markdown("Developer: Yashvanth K")
-        st.markdown("CNN Accuracy: 98.45%")
-        st.markdown("Dataset: MRL Eye Dataset (84K images)")
-        st.markdown("Method: EAR + MAR + CNN")
-        if st.button("Change to drowsy_detect.py mode", width='stretch'):
-            pass
+        st.markdown("Method: Core DrowsyDetector (EAR + MAR + CNN)")
 
 # ── Header ────────────────────────────────────────────────
 h_col1, h_col2 = st.columns([3, 1])
 with h_col1:
-    st.markdown("<h3>🚗 DrowsyGuard <span style='font-size:0.5em; color:#a0a0a0;'>| Powered by CNN 98.45%</span></h3>", unsafe_allow_html=True)
+    cnn_status = "Powered by CNN" if detector.cnn_available else "Geometric Detection"
+    st.markdown(f"<h3>🚗 DrowsyGuard <span style='font-size:0.5em; color:#a0a0a0;'>| {cnn_status}</span></h3>", unsafe_allow_html=True)
 with h_col2:
     timer = format_duration(state.get("session_start"))
     st.markdown(f"<div style='text-align: right; margin-top: 5px;'><span class='pulse-dot'></span> <b>Nova Active</b> | ⏱️ Session: {timer} | 🔔 {state['drowsy_count']} alerts</div>", unsafe_allow_html=True)
@@ -320,11 +292,12 @@ with left_col:
     
     control_container = st.empty()
     with control_container.container():
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         start_btn = c1.button("▶ Start", width='stretch')
         pause_btn = c2.button("⏸ Pause", width='stretch')
         stop_btn  = c3.button("⏹ Stop", width='stretch')
         reset_btn = c4.button("🔄 Reset", width='stretch')
+        calib_btn = c5.button("🎯 Calibrate", width='stretch')
 
 with right_col:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -378,94 +351,22 @@ if stop_btn: state["detection_active"] = False
 if reset_btn:
     state["drowsy_count"] = 0
     state["session_start"] = None
-
-# ── MediaPipe Setup ───────────────────────────────────────
-def eye_aspect_ratio(eye_points, landmarks, w, h):
-    def pt(idx):
-        lm = landmarks[idx]
-        return np.array([lm.x * w, lm.y * h])
-    A = distance.euclidean(pt(eye_points[1]), pt(eye_points[5]))
-    B = distance.euclidean(pt(eye_points[2]), pt(eye_points[4]))
-    C = distance.euclidean(pt(eye_points[0]), pt(eye_points[3]))
-    return (A + B) / (2.0 * C)
-
-def mouth_aspect_ratio(mouth_points, landmarks, w, h):
-    def pt(idx):
-        lm = landmarks[idx]
-        return np.array([lm.x * w, lm.y * h])
-    A = distance.euclidean(pt(mouth_points[1]), pt(mouth_points[7]))
-    B = distance.euclidean(pt(mouth_points[2]), pt(mouth_points[6]))
-    C = distance.euclidean(pt(mouth_points[3]), pt(mouth_points[5]))
-    D = distance.euclidean(pt(mouth_points[0]), pt(mouth_points[4]))
-    return (A + B + C) / (2.0 * D)
-
-def extract_eye_region(frame, eye_points, landmarks, w, h, padding=10):
-    """Extract eye region from frame using MediaPipe landmarks."""
-    def pt(idx):
-        lm = landmarks[idx]
-        return np.array([lm.x * w, lm.y * h])
-    
-    # Get all eye landmark points
-    points = np.array([pt(idx) for idx in eye_points])
-    
-    # Calculate bounding box with padding
-    x_min = int(max(0, np.min(points[:, 0]) - padding))
-    x_max = int(min(w, np.max(points[:, 0]) + padding))
-    y_min = int(max(0, np.min(points[:, 1]) - padding))
-    y_max = int(min(h, np.max(points[:, 1]) + padding))
-    
-    # Extract eye region
-    eye_region = frame[y_min:y_max, x_min:x_max]
-    
-    return eye_region
-
-def preprocess_eye_for_cnn(eye_region):
-    """Preprocess eye region for CNN input (24x24 grayscale normalized)."""
-    try:
-        # Convert to grayscale if needed
-        if len(eye_region.shape) == 3:
-            eye_gray = cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY)
-        else:
-            eye_gray = eye_region
-        
-        # Resize to 24x24
-        eye_resized = cv2.resize(eye_gray, (24, 24))
-        
-        # Normalize to [0, 1]
-        eye_normalized = eye_resized.astype('float32') / 255.0
-        
-        # Reshape to (1, 24, 24, 1) for CNN input
-        eye_input = eye_normalized.reshape(1, 24, 24, 1)
-        
-        return eye_input
-    except Exception as e:
-        logging.error(f"Error preprocessing eye region: {e}")
-        return None
-
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    max_num_faces=1, refine_landmarks=True,
-    min_detection_confidence=0.5, min_tracking_confidence=0.5
-)
-
-LEFT_EYE  = [362, 385, 387, 263, 373, 380]
-RIGHT_EYE = [33,  160, 158, 133, 153, 144]
-MOUTH     = [61, 39, 269, 405, 291, 375, 321, 308]
-YAWN_THRESH = 15
+    detector.reset_calibration()
+if calib_btn:
+    detector.start_calibration()
+    state["detection_active"] = True  # Ensure camera is running for calibration
 
 # ── Camera Loop ───────────────────────────────────────────
 if state.get("detection_active"):
     if state["session_start"] is None:
         state["session_start"] = time.time()
         
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap = cv2.VideoCapture(config.CAMERA_INDEX)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
+    cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     
-    ear_counter = 0
-    yawn_counter = 0
     last_alert = 0
     frame_count = 0
     
@@ -491,106 +392,44 @@ if state.get("detection_active"):
             
         frame_count += 1
         
+        result = detector.process_frame(frame)
+        
         h, w = frame.shape[:2]
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb)
         
-        status_text = "ALERT"
+        status_text = "NORMAL"
         alert = False
-        avg_ear = 0.0
-        mar = 0.0
         
-        if results.multi_face_landmarks:
-            lm = results.multi_face_landmarks[0].landmark
-            
-            left_ear  = eye_aspect_ratio(LEFT_EYE,  lm, w, h)
-            right_ear = eye_aspect_ratio(RIGHT_EYE, lm, w, h)
-            avg_ear   = (left_ear + right_ear) / 2.0
-            mar       = mouth_aspect_ratio(MOUTH, lm, w, h)
-            
-            state["current_ear"] = avg_ear
-            state["current_mar"] = mar
-            
-            # CNN Prediction (if model available)
-            left_cnn_conf = 0.0
-            right_cnn_conf = 0.0
-            cnn_alert = False
-            
-            if st.session_state.get("cnn_model") is not None:
-                try:
-                    # Extract eye regions
-                    left_eye_region = extract_eye_region(frame, LEFT_EYE, lm, w, h)
-                    right_eye_region = extract_eye_region(frame, RIGHT_EYE, lm, w, h)
-                    
-                    # Preprocess for CNN
-                    left_eye_input = preprocess_eye_for_cnn(left_eye_region)
-                    right_eye_input = preprocess_eye_for_cnn(right_eye_region)
-                    
-                    # Run CNN predictions
-                    if left_eye_input is not None and right_eye_input is not None:
-                        cnn_model = st.session_state.cnn_model
-                        left_pred = cnn_model.predict(left_eye_input, verbose=0)[0]
-                        right_pred = cnn_model.predict(right_eye_input, verbose=0)[0]
-                        
-                        # Get confidence for "closed" class (index 1)
-                        left_cnn_conf = left_pred[1] * 100  # Convert to percentage
-                        right_cnn_conf = right_pred[1] * 100
-                        
-                        # Store in state for UI display
-                        state["left_cnn_conf"] = left_cnn_conf
-                        state["right_cnn_conf"] = right_cnn_conf
-                        
-                        # CNN alert if both eyes have high closed confidence
-                        if left_cnn_conf > 70 and right_cnn_conf > 70:
-                            cnn_alert = True
-                except Exception as e:
-                    logging.error(f"CNN prediction error: {e}")
-                    state["left_cnn_conf"] = 0.0
-                    state["right_cnn_conf"] = 0.0
-            else:
-                state["left_cnn_conf"] = 0.0
-                state["right_cnn_conf"] = 0.0
-            
-            # Draw landmarks gently
-            for idx in LEFT_EYE + RIGHT_EYE + MOUTH:
-                x = int(lm[idx].x * w)
-                y = int(lm[idx].y * h)
-                cv2.circle(frame, (x, y), 1, (0, 212, 255), -1)
-                
-            # Hybrid decision logic: trigger alert if EAR threshold OR CNN detects closed eyes
-            if avg_ear < EAR_THRESHOLD or cnn_alert:
-                ear_counter += 1
-                if ear_counter >= FRAME_THRESH:
-                    status_text = "DROWSY — EYES CLOSED!"
-                    alert = True
-            else:
-                ear_counter = 0
-                
-            if mar > MAR_THRESHOLD:
-                yawn_counter += 1
-                if yawn_counter >= YAWN_THRESH:
-                    status_text = "DROWSY — YAWNING!"
-                    alert = True
-            else:
-                yawn_counter = 0
+        avg_ear = result["ear"]
+        mar = result["mar"]
+        state["current_ear"] = avg_ear
+        state["current_mar"] = mar
+        
+        if result["face_detected"]:
+            if result["eyes_closed"]:
+                status_text = "DROWSY — EYES CLOSED!"
+                alert = True
+            elif result["yawning"]:
+                status_text = "DROWSY — YAWNING!"
+                alert = True
                 
             if state.get("dismissed"):
                 alert = False
                 state["dismissed"] = False
                 
             if alert:
-                if time.time() - last_alert > 2:
+                if time.time() - last_alert > config.ALERT_COOLDOWN_SECONDS:
                     state["drowsy_count"] += 1
                     play_alert()
                     last_alert = time.time()
                     if "voice_assistant" in st.session_state:
                         st.session_state.voice_assistant._add_chat_message("system", "🔴 Drowsy alert triggered")
                         render_chat()
-                    
+                        
             color = (44, 44, 255) if alert else (136, 255, 0)
-            cv2.rectangle(frame, (10, 10), (w-10, h-10), color, 3)
-            cv2.rectangle(frame, (10, 10), (300, 60), (0, 0, 0), -1)
-            cv2.putText(frame, status_text, (20, 40), cv2.FONT_HERSHEY_DUPLEX, 0.7, color, 1)
+            if alert:
+                cv2.rectangle(frame, (10, 10), (w-10, h-10), color, 3)
+                cv2.rectangle(frame, (10, 10), (300, 60), (0, 0, 0), -1)
+                cv2.putText(frame, status_text, (20, 40), cv2.FONT_HERSHEY_DUPLEX, 0.7, color, 1)
         else:
             status_text = "NO FACE DETECTED"
             cv2.putText(frame, status_text, (w//2 - 100, h//2), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 165, 255), 2)
@@ -603,18 +442,17 @@ if state.get("detection_active"):
             
         # Update UI components less frequently to prevent Streamlit lag
         if frame_count % 5 == 0:
-            risk_label, risk_class = get_risk_level(avg_ear) if results.multi_face_landmarks else ("Unknown", "status-warn")
+            risk_label, risk_class = get_risk_level(avg_ear) if result["face_detected"] else ("Unknown", "status-warn")
             
-            # Get CNN confidence scores from state
-            left_cnn = state.get("left_cnn_conf", 0.0)
-            right_cnn = state.get("right_cnn_conf", 0.0)
+            left_cnn = result["left_cnn_confidence"]
+            right_cnn = result["right_cnn_confidence"]
             
             with metrics_container.container():
                 m1, m2, m3, m4, m5, m6 = st.columns(6)
-                ear_color = "status-drowsy" if avg_ear < EAR_THRESHOLD and avg_ear > 0 else "status-alert"
-                mar_color = "status-drowsy" if mar > MAR_THRESHOLD else "status-alert"
-                cnn_left_color = "status-drowsy" if left_cnn > 70 else "status-alert"
-                cnn_right_color = "status-drowsy" if right_cnn > 70 else "status-alert"
+                ear_color = "status-drowsy" if avg_ear < detector.calibrated_threshold and avg_ear > 0 else "status-alert"
+                mar_color = "status-drowsy" if mar > config.MAR_THRESHOLD else "status-alert"
+                cnn_left_color = "status-drowsy" if left_cnn > config.CNN_CONFIDENCE_THRESHOLD else "status-alert"
+                cnn_right_color = "status-drowsy" if right_cnn > config.CNN_CONFIDENCE_THRESHOLD else "status-alert"
                 
                 m1.markdown(f"<div class='metric-card'><div class='metric-label'>👁 EAR</div><div class='metric-value {ear_color}'>{avg_ear:.3f}</div></div>", unsafe_allow_html=True)
                 m2.markdown(f"<div class='metric-card'><div class='metric-label'>👄 MAR</div><div class='metric-value {mar_color}'>{mar:.3f}</div></div>", unsafe_allow_html=True)
@@ -623,11 +461,13 @@ if state.get("detection_active"):
                 m5.markdown(f"<div class='metric-card'><div class='metric-label'>⚠️ Risk</div><div class='metric-value {risk_class}'>{risk_label}</div></div>", unsafe_allow_html=True)
                 m6.markdown(f"<div class='metric-card'><div class='metric-label'>😴 Alerts</div><div class='metric-value'>{state['drowsy_count']}</div></div>", unsafe_allow_html=True)
                 
-            if not results.multi_face_landmarks:
+            if not result["face_detected"]:
                 alert_banner_container.markdown(f"<div class='alert-warning'>⚠️ Please face the camera. Nova cannot see you.</div>", unsafe_allow_html=True)
+            elif result["state"] == "CALIBRATING":
+                alert_banner_container.markdown(f"<div class='alert-warning'>🎯 Calibrating baseline EAR... Please look at the camera.</div>", unsafe_allow_html=True)
             elif alert:
                 alert_banner_container.markdown(f"<div class='alert-danger'>🚨 {status_text} — Wake up!</div>", unsafe_allow_html=True)
-            elif ear_counter > FRAME_THRESH // 2 or yawn_counter > YAWN_THRESH // 2:
+            elif result["closed_frames"] > config.EAR_CONSECUTIVE_FRAMES // 2 or result["yawn_frames"] > config.MAR_CONSECUTIVE_FRAMES // 2:
                 alert_banner_container.markdown(f"<div class='alert-warning'>⚠️ Fatigue building... stay focused.</div>", unsafe_allow_html=True)
             else:
                 alert_banner_container.markdown(f"<div class='alert-safe'>✅ Driver is alert and focused.</div>", unsafe_allow_html=True)
