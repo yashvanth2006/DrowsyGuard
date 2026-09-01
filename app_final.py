@@ -65,10 +65,34 @@ if "state" not in st.session_state:
         "session_history": []
     }
 
+if "app_state_dict" not in st.session_state:
+    st.session_state.app_state_dict = {
+        "monitoring": False,
+        "risk_level": "Unknown",
+        "drowsiness": False,
+        "alert_count": 0,
+        "session_duration": "0 minutes"
+    }
+
+if "command_queue" not in st.session_state:
+    import queue
+    st.session_state.command_queue = queue.Queue()
+
+if "nova_status" not in st.session_state:
+    st.session_state.nova_status = "○ Disabled"
+
 state = st.session_state.state
+app_state_dict = st.session_state.app_state_dict
 
 from core.detector import DrowsyDetector
+from voice_assistant import VoiceAssistant
 import config
+
+if "voice_assistant" not in st.session_state:
+    def state_getter():
+        return st.session_state.app_state_dict
+    st.session_state.voice_assistant = VoiceAssistant(st.session_state.command_queue, state_getter)
+    st.session_state.voice_assistant.start()
 
 # ── Audio Setup ────────────────────────────────────────────
 pygame.mixer.init()
@@ -102,6 +126,9 @@ with st.sidebar:
     # Thresholds
     ear_threshold = st.slider("Alert Threshold (% of baseline)", 50, 90, 70)
     frame_threshold = st.slider("Alert Sensitivity (frames)", 5, 30, 15)
+    
+    st.markdown("#### 🎙️ Voice Assistant")
+    st.markdown(f"**Nova:** {st.session_state.nova_status}")
     
     # Emergency Contact
     st.markdown("#### 🆘 Emergency")
@@ -171,7 +198,6 @@ if start_btn:
 
 if stop_btn:
     state["detection_active"] = False
-    # Save session
     if state["session_start"]:
         duration = int((time.time() - state["session_start"]) / 60)
         state["session_history"].append({
@@ -182,6 +208,27 @@ if stop_btn:
 
 if calibrate_btn:
     state["calibrated"] = False
+
+# Process pending voice commands (Non-blocking)
+from queue import Empty
+try:
+    while True:
+        cmd = st.session_state.command_queue.get_nowait()
+        action = cmd.get("action")
+        if action == "START":
+            state["detection_active"] = True
+            if not state["session_start"]:
+                state["session_start"] = time.time()
+                state["alert_count"] = 0
+            st.rerun()
+        elif action == "STOP":
+            state["detection_active"] = False
+            st.rerun()
+        elif action == "NOVA_STATUS":
+            st.session_state.nova_status = cmd.get("status", "○ Disabled")
+            st.rerun()
+except Empty:
+    pass
 
 # ── Detection Loop ─────────────────────────────────────────
 if state["detection_active"]:
@@ -210,6 +257,18 @@ if state["detection_active"]:
             break
         
         frame_count += 1
+        
+        # Check queue during camera loop to stay responsive
+        try:
+            while True:
+                cmd = st.session_state.command_queue.get_nowait()
+                action = cmd.get("action")
+                if action == "STOP":
+                    state["detection_active"] = False
+                elif action == "NOVA_STATUS":
+                    st.session_state.nova_status = cmd.get("status", "○ Disabled")
+        except Empty:
+            pass
         
         # Sync dynamic settings to detector
         config.STATIC_EAR_THRESHOLD = state.get("baseline_ear", 0.3) * (ear_threshold / 100.0)
@@ -274,7 +333,28 @@ if state["detection_active"]:
                 alert_container.markdown("<div class='alert-warning'>⚠️ Fatigue detected. Stay alert.</div>", unsafe_allow_html=True)
             else:
                 alert_container.markdown("<div class='alert-safe'>✅ Driver alert and focused.</div>", unsafe_allow_html=True)
+                
+            # Sync state dict for VoiceAssistant
+            dur = "unknown time"
+            if state["session_start"]:
+                elapsed = int(time.time() - state["session_start"])
+                hours = elapsed // 3600
+                minutes = (elapsed % 3600) // 60
+                dur = f"{hours} hour{'s' if hours>1 else ''} and {minutes} minutes" if hours > 0 else f"{minutes} minute{'s' if minutes!=1 else ''}"
+                    
+            st.session_state.app_state_dict.update({
+                "monitoring": state["detection_active"],
+                "risk_level": risk_level,
+                "drowsiness": result.get("eyes_closed", False),
+                "alert_count": state["alert_count"],
+                "session_duration": dur
+            })
     
     detector.close()
     if cap:
         cap.release()
+else:
+    # Idle loop checking for voice commands when camera is off
+    import time
+    time.sleep(0.5)
+    st.rerun()

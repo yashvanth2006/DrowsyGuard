@@ -38,6 +38,7 @@ CNN_INPUT_CHANNELS = 1
 CNN_CONFIDENCE_THRESHOLD = 70.0
 
 # ── 6. Alerts ───────────────────────────────────────────────
+AUDIO_ALERT_ENABLED = True
 # Cooldown between consecutive audio alerts (in seconds)
 ALERT_COOLDOWN_SECONDS = 2.0
 # Audio generation settings
@@ -46,6 +47,9 @@ AUDIO_FREQ = 1000
 AUDIO_DURATION = 0.5
 
 # ── 7. Voice Assistant ──────────────────────────────────────
+VOICE_ENABLED = True
+TTS_ENABLED = True
+
 ASSISTANT_NAME = "nova"
 WAKE_WORDS = ["nova", "no va", "nover", "over", "know va", "nola", "noa"]
 
