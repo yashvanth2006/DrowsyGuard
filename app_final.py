@@ -67,18 +67,8 @@ if "state" not in st.session_state:
 
 state = st.session_state.state
 
-# ── CNN Model Loading (Optional) ───────────────────────────
-@st.cache_resource
-def load_cnn_model():
-    try:
-        from tensorflow.keras.models import load_model
-        if os.path.exists("eye_state_model.h5"):
-            return load_model("eye_state_model.h5")
-    except:
-        pass
-    return None
-
-cnn_model = load_cnn_model()
+from core.detector import DrowsyDetector
+import config
 
 # ── Audio Setup ────────────────────────────────────────────
 pygame.mixer.init()
@@ -89,23 +79,6 @@ def play_alert_sound(freq=1000, duration=0.3):
     wave = (np.sin(2 * np.pi * freq * t) * 32767).astype(np.int16)
     sound = pygame.sndarray.make_sound(np.column_stack([wave, wave]))
     sound.play()
-
-# ── MediaPipe Setup ───────────────────────────────────────
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    max_num_faces=1, refine_landmarks=True,
-    min_detection_confidence=0.5, min_tracking_confidence=0.5
-)
-
-LEFT_EYE = [362, 385, 387, 263, 373, 380]
-RIGHT_EYE = [33, 160, 158, 133, 153, 144]
-
-def eye_aspect_ratio(eye_points, landmarks, w, h):
-    def pt(idx): return np.array([landmarks[idx].x * w, landmarks[idx].y * h])
-    A = distance.euclidean(pt(eye_points[1]), pt(eye_points[5]))
-    B = distance.euclidean(pt(eye_points[2]), pt(eye_points[4]))
-    C = distance.euclidean(pt(eye_points[0]), pt(eye_points[3]))
-    return (A + B) / (2.0 * C)
 
 def get_risk_level(ear, baseline):
     ratio = ear / baseline if baseline > 0 else 1
@@ -150,10 +123,11 @@ with col1:
     # Metrics
     metrics_container = st.empty()
     with metrics_container.container():
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.markdown(f"<div class='metric-card'><div class='metric-label'>Eye Openness</div><div class='metric-value'>0%</div></div>", unsafe_allow_html=True)
         m2.markdown(f"<div class='metric-card'><div class='metric-label'>Risk Level</div><div class='metric-value'>--</div></div>", unsafe_allow_html=True)
         m3.markdown(f"<div class='metric-card'><div class='metric-label'>Alerts</div><div class='metric-value'>0</div></div>", unsafe_allow_html=True)
+        m4.markdown(f"<div class='metric-card'><div class='metric-label'>CNN Status</div><div class='metric-value'>WAIT</div></div>", unsafe_allow_html=True)
     
     alert_container = st.empty()
     alert_container.markdown("<div class='alert-safe'>✅ Ready to start. Click 'Start Monitoring' below.</div>", unsafe_allow_html=True)
@@ -216,15 +190,19 @@ if state["detection_active"]:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 30)
     
-    ear_values = []
-    alert_counter = 0
+    detector = DrowsyDetector()
+    if state["calibrated"]:
+        detector.baseline_ear = state["baseline_ear"]
+        detector.calibrated_threshold = state["baseline_ear"] * (ear_threshold / 100.0)
+        detector.is_calibrated = True
+    
     last_alert = 0
     frame_count = 0
-    calibration_frames = 0
     
     # Calibration mode
     if not state["calibrated"]:
         st.info("🎯 CALIBRATION: Keep eyes open for 5 seconds...")
+        detector.start_calibration()
     
     while cap.isOpened() and state["detection_active"]:
         ret, frame = cap.read()
@@ -232,75 +210,71 @@ if state["detection_active"]:
             break
         
         frame_count += 1
-        h, w = frame.shape[:2]
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb)
         
-        if results.multi_face_landmarks:
-            lm = results.multi_face_landmarks[0].landmark
-            left_ear = eye_aspect_ratio(LEFT_EYE, lm, w, h)
-            right_ear = eye_aspect_ratio(RIGHT_EYE, lm, w, h)
-            avg_ear = (left_ear + right_ear) / 2.0
+        # Sync dynamic settings to detector
+        config.STATIC_EAR_THRESHOLD = state.get("baseline_ear", 0.3) * (ear_threshold / 100.0)
+        config.EAR_CONSECUTIVE_FRAMES = frame_threshold
+        if state["calibrated"]:
+            detector.calibrated_threshold = config.STATIC_EAR_THRESHOLD
+
+        result = detector.process_frame(frame)
+        
+        if result["state"] == "CALIBRATING":
+            if detector.is_calibrated:
+                state["baseline_ear"] = detector.baseline_ear
+                state["calibrated"] = True
+                st.success(f"✅ Calibration complete! Baseline EAR: {state['baseline_ear']:.3f}")
+        else:
+            state["current_ear"] = result["ear"]
             
-            state["current_ear"] = avg_ear
+            # Alert Sound Logic
+            if result["eyes_closed"] or result["yawning"]:
+                if time.time() - last_alert > 2:
+                    state["alert_count"] += 1
+                    play_alert_sound()
+                    last_alert = time.time()
+
+        # Draw overlay
+        h, w = frame.shape[:2]
+        if result["face_detected"] and result.get("landmarks"):
+            for idx in detector.LEFT_EYE + detector.RIGHT_EYE:
+                lm = result["landmarks"][idx]
+                x, y = int(lm.x * w), int(lm.y * h)
+                cv2.circle(frame, (x, y), 2, (0, 255, 136), -1)
             
-            # Calibration
-            if not state["calibrated"]:
-                ear_values.append(avg_ear)
-                calibration_frames += 1
-                
-                if calibration_frames >= 150:  # 5 seconds at 30fps
-                    state["baseline_ear"] = np.mean(ear_values)
-                    state["calibrated"] = True
-                    st.success(f"✅ Calibration complete! Baseline EAR: {state['baseline_ear']:.3f}")
-                    ear_values = []
-            else:
-                # Detection
-                threshold = state["baseline_ear"] * (ear_threshold / 100.0)
-                
-                if avg_ear < threshold:
-                    alert_counter += 1
-                    if alert_counter >= frame_threshold:
-                        if time.time() - last_alert > 2:
-                            state["alert_count"] += 1
-                            play_alert_sound()
-                            last_alert = time.time()
-                else:
-                    alert_counter = 0
-                
-                # Draw
-                for idx in LEFT_EYE + RIGHT_EYE:
-                    x, y = int(lm[idx].x * w), int(lm[idx].y * h)
-                    cv2.circle(frame, (x, y), 2, (0, 255, 136), -1)
-                
-                color = (255, 51, 68) if alert_counter >= frame_threshold else (0, 255, 136)
-                cv2.rectangle(frame, (10, 10), (w-10, h-10), color, 2)
+            color = (255, 51, 68) if result["eyes_closed"] else (0, 255, 136)
+            cv2.rectangle(frame, (10, 10), (w-10, h-10), color, 2)
         else:
             cv2.putText(frame, "No Face", (w//2 - 50, h//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
         
-        # Update video
+        # Display Video
         frame_resized = cv2.resize(frame, (640, 480))
         ret_jpg, buffer = cv2.imencode('.jpg', frame_resized, [cv2.IMWRITE_JPEG_QUALITY, 70])
         if ret_jpg:
             video_container.image(buffer.tobytes(), channels="BGR", width='stretch')
         
-        # Update UI every 5 frames
+        # Update UI Metrics (throttled)
         if frame_count % 5 == 0 and state["calibrated"]:
             openness = int((state["current_ear"] / state["baseline_ear"]) * 100) if state["baseline_ear"] > 0 else 0
             risk_level, risk_color = get_risk_level(state["current_ear"], state["baseline_ear"])
             
+            cnn_status = "● Active" if result["cnn_available"] else "○ N/A"
+            cnn_color = "#00ff88" if result["cnn_available"] else "#888"
+            
             with metrics_container.container():
-                m1, m2, m3 = st.columns(3)
+                m1, m2, m3, m4 = st.columns(4)
                 m1.markdown(f"<div class='metric-card'><div class='metric-label'>Eye Openness</div><div class='metric-value'>{openness}%</div></div>", unsafe_allow_html=True)
                 m2.markdown(f"<div class='metric-card'><div class='metric-label'>Risk Level</div><div class='metric-value' style='color:{risk_color}'>{risk_level}</div></div>", unsafe_allow_html=True)
                 m3.markdown(f"<div class='metric-card'><div class='metric-label'>Alerts</div><div class='metric-value'>{state['alert_count']}</div></div>", unsafe_allow_html=True)
+                m4.markdown(f"<div class='metric-card'><div class='metric-label'>CNN Status</div><div class='metric-value' style='color:{cnn_color}; font-size:18px;'>{cnn_status}</div></div>", unsafe_allow_html=True)
             
-            if alert_counter >= frame_threshold:
+            if result["eyes_closed"]:
                 alert_container.markdown("<div class='alert-danger'>🚨 WAKE UP! Eyes detected closed!</div>", unsafe_allow_html=True)
             elif openness < 80:
                 alert_container.markdown("<div class='alert-warning'>⚠️ Fatigue detected. Stay alert.</div>", unsafe_allow_html=True)
             else:
                 alert_container.markdown("<div class='alert-safe'>✅ Driver alert and focused.</div>", unsafe_allow_html=True)
     
+    detector.close()
     if cap:
         cap.release()
