@@ -86,6 +86,7 @@ app_state_dict = st.session_state.app_state_dict
 
 from core.detector import DrowsyDetector
 from voice_assistant import VoiceAssistant
+from analytics.logger import SessionLogger
 import config
 
 if "voice_assistant" not in st.session_state:
@@ -93,6 +94,9 @@ if "voice_assistant" not in st.session_state:
         return st.session_state.app_state_dict
     st.session_state.voice_assistant = VoiceAssistant(st.session_state.command_queue, state_getter)
     st.session_state.voice_assistant.start()
+
+if "session_logger" not in st.session_state:
+    st.session_state.session_logger = SessionLogger()
 
 # ── Audio Setup ────────────────────────────────────────────
 pygame.mixer.init()
@@ -137,7 +141,11 @@ with st.sidebar:
     
     # Session History
     st.markdown("#### 📊 Recent Sessions")
-    if state["session_history"]:
+    history = st.session_state.session_logger.get_session_history()
+    if history:
+        for session in history[:5]:
+            st.markdown(f"- {session['date']}: {session['duration']} min, {session['alerts']} alerts, {session['risk']} risk")
+    elif state["session_history"]:
         for session in state["session_history"][-5:]:
             st.markdown(f"- {session['date']}: {session['duration']} min, {session['alerts']} alerts")
 
@@ -195,6 +203,7 @@ if start_btn:
     state["detection_active"] = True
     state["session_start"] = time.time()
     state["alert_count"] = 0
+    st.session_state.session_logger.start_session()
 
 if stop_btn:
     state["detection_active"] = False
@@ -205,6 +214,7 @@ if stop_btn:
             "duration": duration,
             "alerts": state["alert_count"]
         })
+    st.session_state.session_logger.end_session()
 
 if calibrate_btn:
     state["calibrated"] = False
@@ -215,14 +225,17 @@ try:
     while True:
         cmd = st.session_state.command_queue.get_nowait()
         action = cmd.get("action")
+        st.session_state.session_logger.log_event("VOICE_COMMAND", {"action": action})
         if action == "START":
             state["detection_active"] = True
             if not state["session_start"]:
                 state["session_start"] = time.time()
                 state["alert_count"] = 0
+                st.session_state.session_logger.start_session()
             st.rerun()
         elif action == "STOP":
             state["detection_active"] = False
+            st.session_state.session_logger.end_session()
             st.rerun()
         elif action == "NOVA_STATUS":
             st.session_state.nova_status = cmd.get("status", "○ Disabled")
@@ -263,8 +276,10 @@ if state["detection_active"]:
             while True:
                 cmd = st.session_state.command_queue.get_nowait()
                 action = cmd.get("action")
+                st.session_state.session_logger.log_event("VOICE_COMMAND", {"action": action})
                 if action == "STOP":
                     state["detection_active"] = False
+                    st.session_state.session_logger.end_session()
                 elif action == "NOVA_STATUS":
                     st.session_state.nova_status = cmd.get("status", "○ Disabled")
         except Empty:
@@ -287,11 +302,16 @@ if state["detection_active"]:
             state["current_ear"] = result["ear"]
             
             # Alert Sound Logic
+            alert_triggered_now = False
             if result["eyes_closed"] or result["yawning"]:
                 if time.time() - last_alert > 2:
                     state["alert_count"] += 1
                     play_alert_sound()
                     last_alert = time.time()
+                    alert_triggered_now = True
+
+            risk_level, _ = get_risk_level(state["current_ear"], state.get("baseline_ear", 0.3))
+            st.session_state.session_logger.update_metrics(result, risk_level, alert_triggered_now)
 
         # Draw overlay
         h, w = frame.shape[:2]
@@ -353,6 +373,7 @@ if state["detection_active"]:
     detector.close()
     if cap:
         cap.release()
+    st.session_state.session_logger.end_session()
 else:
     # Idle loop checking for voice commands when camera is off
     import time
