@@ -66,3 +66,8 @@ TTS_VOLUME = 1.0
 
 # Local offline speech model path
 VOSK_MODEL_PATH = BASE_DIR / "vosk-model-small-en-us"
+
+# ── 8. Analytics ────────────────────────────────────────────
+ANALYTICS_ENABLED = True
+LOCAL_ANALYTICS_DIR = BASE_DIR / "data" / "sessions"
+CLOUD_ANALYTICS_ENABLED = False
