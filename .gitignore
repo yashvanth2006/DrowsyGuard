@@ -1,4 +1,13 @@
 archive.zip
 .venv/
+venv/
 __pycache__/
 *.pyc
+.env
+.env.*
+.pytest_cache/
+.mypy_cache/
+.coverage
+data/sessions/
+logs/
+*.log
