@@ -1,32 +1,33 @@
 # DrowsyGuard Pro 🚗👁️
 
-DrowsyGuard Pro is a practical, real-time driver safety application that detects drowsiness using computer vision and MediaPipe face landmarks. Designed for real-world use with personalized calibration and reliable performance.
+## 1. Project Overview
+DrowsyGuard Pro is a practical, real-time driver safety application that detects drowsiness using computer vision and MediaPipe face landmarks. It features personalized calibration, robust analytics, and a voice assistant. Designed for real-world use with secure, offline-first processing.
 
-## ✨ Key Features
+## 2. Technology Stack
+- **Frontend & UI**: Streamlit, OpenCV
+- **Computer Vision**: MediaPipe, OpenCV
+- **Deep Learning**: TensorFlow / Keras (CNN for eye state classification)
+- **Voice Assistant**: SpeechRecognition, Vosk, pyttsx3
+- **Audio Alerts**: Pygame
+- **Data & Analytics**: Python stdlib (JSON)
 
-- **Personalized Calibration**: System learns your baseline eye openness for accurate detection
-- **Real-time Detection**: Monitors eye closure using Eye Aspect Ratio (EAR)
-- **Session Analytics**: Tracks driving sessions and alert history
-- **Emergency Contact**: Quick access to emergency contact information
-- **Offline-First**: Works without internet connection
-- **Simple Controls**: Easy-to-use button interface (no voice commands needed)
-- **Adjustable Sensitivity**: Customize alert threshold and sensitivity
+## 3. Requirements
+- **OS**: Windows 10/11 (Development and current primary support)
+- **Python**: 3.11.x (Tested on 3.11.7)
+- **Hardware**: 
+  - Webcam / Camera for face detection
+  - Microphone for Voice Assistant
+  - Audio output (speakers/headphones) for alerts
+- **Model Requirement**: A pre-trained CNN model `eye_state_model.h5` is required for hybrid detection.
 
-## Prerequisites
-
-- **OS**: Windows 10/11
-- **Python**: 3.8 or higher
-- **Webcam**: Built-in or external camera
-- **Good Lighting**: Adequate lighting for accurate face detection
-
-## Installation & Setup
+## 4. Installation
 
 1. **Navigate to the project directory:**
    ```bash
    cd DrowsyGuard
    ```
 
-2. **Create and activate virtual environment:**
+2. **Create and activate virtual environment (Windows):**
    ```bash
    python -m venv .venv
    .venv\Scripts\activate
@@ -34,92 +35,85 @@ DrowsyGuard Pro is a practical, real-time driver safety application that detects
 
 3. **Install dependencies:**
    ```bash
-   pip install -r requirements.txt
+   python -m pip install --upgrade pip
+   python -m pip install -r requirements.txt
    ```
 
-4. **Run the application:**
-   ```bash
-   streamlit run app_final.py
-   ```
+## 5. MediaPipe Compatibility
+**CRITICAL**: This project relies on `mediapipe==0.10.14`.
+The application currently uses the legacy `mp.solutions` API (specifically `mp.solutions.face_mesh`). Upgrading MediaPipe past `0.10.14` may break face detection because newer versions deprecate the `solutions` API in favor of Tasks. Do not upgrade MediaPipe casually.
 
-## Usage Guide
+## 6. Model Setup
+The hybrid CNN detection requires `eye_state_model.h5` to be placed in the root directory (`DrowsyGuard/eye_state_model.h5`). If the model is missing, the application will gracefully fall back to pure geometric (EAR) detection without crashing.
 
-### First-Time Setup
+## 7. Configuration
+Application settings are centralized in `config.py`. This includes camera settings, alert thresholds, voice assistant timeouts, and analytics flags. For environment-specific secrets, a `.env.example` is provided, though currently, no hardcoded secrets are required for the application to run.
 
-1. **Launch the application** using the command above
-2. **Allow camera access** when prompted
-3. **Position yourself** in front of the camera with good lighting
-4. **Click "Calibrate Baseline"** while keeping your eyes fully open
-5. **Wait 5 seconds** while the system records your baseline eye openness
-6. **Start Monitoring** by clicking the "Start Monitoring" button
-
-### During Use
-
-- **Monitor the metrics**: Eye openness percentage, risk level, and alert count
-- **Adjust settings**: Use sidebar to change alert threshold and sensitivity
-- **Emergency contact**: Set your emergency contact in the sidebar for quick access
-- **Recalibrate**: Click "Recalibrate" if you add/remove glasses or lighting changes
-
-### Settings Explained
-
-- **Alert Threshold**: Percentage of baseline eye openness that triggers alerts (default: 70%)
-- **Alert Sensitivity**: Number of consecutive frames below threshold before alert (default: 15)
-- **Emergency Contact**: Phone number or contact for emergency situations
-
-## How It Works
-
-1. **MediaPipe Face Mesh** detects 468 facial landmarks
-2. **Eye Aspect Ratio (EAR)** calculates eye openness using 6 points per eye
-3. **Baseline Calibration** records your normal eye openness
-4. **Real-time Monitoring** compares current EAR to your baseline
-5. **Alert System** triggers when eyes remain closed for configured duration
-
-## Troubleshooting
-
-**Camera not working:**
-- Ensure camera is not in use by another application
-- Check camera permissions in Windows settings
-- Try restarting the application
-
-**Poor detection accuracy:**
-- Improve lighting conditions (avoid backlighting)
-- Position camera at eye level
-- Recalibrate baseline
-- Ensure face is clearly visible in frame
-
-**False alerts:**
-- Increase alert threshold percentage
-- Increase alert sensitivity (frame count)
-- Recalibrate with eyes fully open
-
-**No alerts when drowsy:**
-- Decrease alert threshold percentage
-- Decrease alert sensitivity (frame count)
-- Ensure calibration was done with eyes fully open
-
-## Technical Details
-
-- **Detection Method**: Eye Aspect Ratio (EAR) using MediaPipe Face Mesh
-- **Frame Rate**: 30 FPS
-- **Resolution**: 640x480
-- **Dependencies**: Streamlit, OpenCV, MediaPipe, NumPy, SciPy, Pygame
-- **No Internet Required**: Fully offline operation
-
-## Project Structure
-
-```
-DrowsyGuard/
-├── app_final.py          # Main application (FINAL VERSION)
-├── requirements.txt      # Python dependencies
-├── README.md            # This file
-└── .venv/               # Virtual environment
+## 8. Running Streamlit
+To launch the main Streamlit interface:
+```bash
+streamlit run app_final.py
 ```
 
-## License
+## 9. Running Standalone Detector
+To launch the headless OpenCV standalone detector:
+```bash
+python drowsy_detect.py
+```
 
-This project is licensed under the MIT License.
+## 10. Calibration
+**Calibration Process**: When you start the application or click 'Calibrate', sit in front of the camera with your eyes fully open for 5 seconds. The system calculates your baseline Eye Aspect Ratio (EAR) and creates a personalized threshold. This ensures accuracy across different users and conditions (e.g., wearing glasses).
 
-## Acknowledgments
+## 11. Keyboard Controls
+When running the **Standalone Detector** (`drowsy_detect.py`), the OpenCV window supports:
+- **Q** — Quit the application
+- **C** — Calibrate baseline
+- **R** — Reset calibration
 
-- [MediaPipe](https://developers.google.com/mediapipe) for face mesh detection
-- [Streamlit](https://streamlit.io/) for the web interface framework
+## 12. Voice Assistant
+DrowsyGuard Pro features **Nova**, an integrated voice assistant:
+- **Vosk**: Local offline speech recognition used as the primary engine. Requires the `vosk-model-small-en-us` directory in the project root.
+- **Google Fallback**: If Vosk is unavailable, Nova gracefully falls back to Google's online speech recognition.
+- **Graceful Failure**: If a microphone is unavailable or voice libraries fail to load, the voice assistant disables itself without crashing the core drowsiness detection.
+
+## 13. Analytics
+- **Local Storage**: Session analytics are stored securely on the local machine in `data/sessions/`.
+- **Session Data**: Tracks metrics such as maximum risk level, total alerts, drowsiness events, and session duration.
+- **Privacy Model**: No cloud analytics are used by default (`CLOUD_ANALYTICS_ENABLED = False`). 
+
+## 14. Troubleshooting
+- **MediaPipe Errors**: Verify you are using exactly `mediapipe==0.10.14`.
+- **Missing Model**: Place `eye_state_model.h5` in the root folder. Detection will still work via EAR fallback.
+- **Camera Unavailable**: Ensure no other application (like Zoom/Teams) is using the camera.
+- **Microphone Unavailable**: Check system sound settings; Nova will disable itself safely if missing.
+- **Dependency Problems**: Run `python -m pip check` to ensure all packages in `requirements.txt` are correctly installed.
+
+## 15. Security
+- **Secrets Management**: Configuration uses environment variables where applicable. Do not commit `.env` files.
+- **No Raw Media Persistence**: The application intentionally does **NOT** save raw camera frames, raw audio recordings, or raw speech transcripts to disk. 
+- **Analytics**: Analytics are entirely local/offline. Unnecessary PII is not stored.
+
+## 16. Hardware Limitations
+Full functional validation of camera capturing, face detection, microphone input, and speaker output fundamentally requires the appropriate physical hardware. Automated software tests can verify the logic, but real-world physical verification is environment-dependent.
+
+---
+
+## PRODUCTION RELEASE CHECKLIST
+- [x] Python environment verified
+- [x] requirements.txt verified
+- [x] MediaPipe 0.10.14 pinned
+- [x] pip check passes
+- [x] dependency audit completed where available (Note: pip-audit unavailable)
+- [x] no hardcoded secrets
+- [x] .gitignore verified
+- [x] model artifact verified
+- [x] Streamlit startup verified
+- [x] standalone startup verified
+- [x] tests pass
+- [x] compileall passes
+- [x] analytics privacy verified
+- [x] camera cleanup verified
+- [x] voice cleanup verified
+- [x] Git working tree reviewed
+- [x] README complete
+- [x] hardware-dependent tests documented
