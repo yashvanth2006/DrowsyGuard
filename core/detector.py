@@ -14,7 +14,6 @@ class DrowsyDetector:
     MOUTH = [61, 39, 269, 405, 291, 375, 321, 308]
 
     def __init__(self):
-        # MediaPipe initialization
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=1, 
@@ -23,19 +22,16 @@ class DrowsyDetector:
             min_tracking_confidence=0.5
         )
 
-        # CNN initialization
         self.cnn_model = None
         self.cnn_available = False
         self._load_cnn()
 
-        # Calibration state
         self.is_calibrated = False
         self.is_calibrating = False
         self.calibration_samples = []
         self.baseline_ear = config.DEFAULT_BASELINE_EAR
         self.calibrated_threshold = config.STATIC_EAR_THRESHOLD
 
-        # Detection state
         self.closed_frames = 0
         self.yawn_frames = 0
 
@@ -168,7 +164,6 @@ class DrowsyDetector:
             landmarks = mp_results.multi_face_landmarks[0].landmark
             result["landmarks"] = landmarks
 
-            # Geometric calculations
             left_ear = self._eye_aspect_ratio(self.LEFT_EYE, landmarks, w, h)
             right_ear = self._eye_aspect_ratio(self.RIGHT_EYE, landmarks, w, h)
             avg_ear = (left_ear + right_ear) / 2.0
