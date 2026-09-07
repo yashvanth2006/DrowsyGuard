@@ -12,7 +12,6 @@ from analytics.session import Session, Event
 
 class TestAnalytics(unittest.TestCase):
     def setUp(self):
-        # Use a temporary directory for local analytics dir
         self.test_dir = tempfile.mkdtemp()
         self.patcher = patch('config.LOCAL_ANALYTICS_DIR', new=self.test_dir)
         self.patcher.start()
@@ -30,7 +29,6 @@ class TestAnalytics(unittest.TestCase):
         self.assertIsNotNone(self.logger.session)
         self.assertEqual(self.logger.session.session_id, session_id)
         
-        # Verify SESSION_STARTED event is logged
         self.assertEqual(len(self.logger.session.events), 1)
         self.assertEqual(self.logger.session.events[0]["event_type"], "SESSION_STARTED")
 
@@ -67,16 +65,13 @@ class TestAnalytics(unittest.TestCase):
     def test_drowsiness_deduplication(self):
         self.logger.start_session()
         
-        # Frame 1: Drowsy
         self.logger.update_metrics({"eyes_closed": True, "ear": 0.15}, "HIGH", True)
         self.assertTrue(self.logger.active_drowsy_episode)
         self.assertEqual(self.logger.session.total_drowsy_events, 1)
         
-        # Frame 2: Still Drowsy
         self.logger.update_metrics({"eyes_closed": True, "ear": 0.15}, "HIGH", False)
         self.assertEqual(self.logger.session.total_drowsy_events, 1) # Should not increment
         
-        # Frame 3: Normal
         self.logger.update_metrics({"eyes_closed": False, "ear": 0.3}, "LOW", False)
         self.assertFalse(self.logger.active_drowsy_episode)
         self.assertEqual(self.logger.session.total_drowsy_events, 1)
