@@ -26,15 +26,12 @@ class TestStandalone(unittest.TestCase):
         """Test 3: Verify that drowsy_detect.main() uses DrowsyDetector."""
         import drowsy_detect
         
-        # Setup mocks
         mock_detector_instance = MagicMock()
         mock_detector_class.return_value = mock_detector_instance
         
-        # Mock frame and result
         mock_cv2.VideoCapture().read.side_effect = [(True, "frame"), (False, None)]
         mock_cv2.waitKey.return_value = ord('q')
         
-        # We need to mock process_frame to return a valid result dictionary
         mock_detector_instance.process_frame.return_value = {
             "face_detected": True,
             "ear": 0.3,
@@ -44,10 +41,8 @@ class TestStandalone(unittest.TestCase):
             "is_calibrated": False
         }
         
-        # Run main
         drowsy_detect.main()
         
-        # Assert DrowsyDetector was instantiated
         mock_detector_class.assert_called_once()
         # Assert process_frame was called
         mock_detector_instance.process_frame.assert_called()
