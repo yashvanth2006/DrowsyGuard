@@ -1,20 +1,15 @@
 import os
 from pathlib import Path
 
-# Base project directory
 BASE_DIR = Path(__file__).resolve().parent
 
-# ── 1. Camera ───────────────────────────────────────────────
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 CAMERA_FPS = 30
 
-# ── 2. Calibration ──────────────────────────────────────────
-# 150 frames at 30 FPS = 5 seconds of calibration
 CALIBRATION_FRAMES = 150
 DEFAULT_BASELINE_EAR = 0.30
-# Default percentage of baseline EAR to trigger an alert
 CALIBRATION_EAR_THRESHOLD_PERCENT = 70.0
 
 # ── 3. Eye Detection (Geometric) ────────────────────────────

@@ -8,14 +8,12 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from tensorflow.keras.utils import to_categorical
 
-# ── Config ────────────────────────────────────────────────
 TRAIN_PATH = "archive/data/train"
 VAL_PATH   = "archive/data/val"
 IMG_SIZE   = 24
 EPOCHS     = 15
 BATCH_SIZE = 32
 
-# ── Load images from awake/sleepy folders ─────────────────
 def load_data(path):
     data, labels = [], []
     for label, folder in enumerate(["awake", "sleepy"]):
@@ -41,7 +39,6 @@ print(f"   Sleepy: {list(y_train).count(1)}")
 print("📂 Loading validation data...")
 X_val, y_val = load_data(VAL_PATH)
 
-# ── Preprocess ────────────────────────────────────────────
 X_train = X_train.reshape(-1, IMG_SIZE, IMG_SIZE, 1).astype("float32") / 255.0
 X_val   = X_val.reshape(-1, IMG_SIZE, IMG_SIZE, 1).astype("float32") / 255.0
 y_train = to_categorical(y_train, 2)
@@ -49,7 +46,6 @@ y_val   = to_categorical(y_val,   2)
 
 print(f"\n📊 Train: {len(X_train)} | Val: {len(X_val)}")
 
-# ── CNN Model ─────────────────────────────────────────────
 model = Sequential([
     Conv2D(32, (3,3), activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, 1)),
     MaxPooling2D(2, 2),
@@ -71,7 +67,6 @@ model.compile(
 
 model.summary()
 
-# ── Train ─────────────────────────────────────────────────
 print("\n🚀 Training started...")
 history = model.fit(
     X_train, y_train,
