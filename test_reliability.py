@@ -4,7 +4,6 @@ import sys
 import time
 import numpy as np
 
-# We want to mock time.sleep so our tests run instantly instead of waiting for 0.1s during failure loops
 patch('time.sleep').start()
 
 import drowsy_detect
@@ -17,7 +16,6 @@ class TestReliability(unittest.TestCase):
     @patch('drowsy_detect.DrowsyDetector')
     @patch('pygame.mixer.quit')
     def test_camera_open_failure(self, mock_mixer_quit, mock_detector_cls, mock_videocapture):
-        # Mock cap.isOpened() to False
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = False
         mock_videocapture.return_value = mock_cap
@@ -43,7 +41,6 @@ class TestReliability(unittest.TestCase):
         mock_detector_instance = MagicMock()
         mock_detector_cls.return_value = mock_detector_instance
 
-        # Should break after 5 consecutive failures
         drowsy_detect.main()
         
         self.assertEqual(mock_cap.read.call_count, 5)
@@ -62,7 +59,6 @@ class TestReliability(unittest.TestCase):
         import numpy as np
         fake_frame = np.zeros((480, 640, 3), dtype=np.uint8)
         
-        # Sequence: Fail(1), Fail(2), Success(resets to 0), Fail(1), Fail(2), Fail(3), Fail(4), Success(resets to 0)
         reads = [
             (False, None), (False, None), 
             (True, fake_frame), 
@@ -79,7 +75,6 @@ class TestReliability(unittest.TestCase):
         mock_videocapture.return_value = mock_cap
         
         def waitkey_side_effect(delay):
-            # Quit when we are out of pre-defined reads
             if len(reads) == 0:
                 return ord('q')
             return -1
