@@ -17,11 +17,9 @@ class SessionLogger:
         self.active_drowsy_episode = False
         self.active_yawn_episode = False
         
-        # Risk level tracking
         self.risk_levels = {"Unknown": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
         self.current_risk = "Unknown"
         
-        # EAR tracking
         self.ear_sum = 0.0
         self.ear_count = 0
         
@@ -57,7 +55,6 @@ class SessionLogger:
             return
             
         try:
-            # Update Calibration status
             if result.get("is_calibrated") and not self.session.calibration_completed:
                 self.session.calibration_completed = True
                 self.log_event("CALIBRATION_COMPLETED", {"baseline_ear": result.get("baseline_ear")})
@@ -66,13 +63,11 @@ class SessionLogger:
                 if len(self.session.events) == 1: # Only SESSION_STARTED exists
                     self.log_event("CALIBRATION_STARTED")
             
-            # Risk Level Transitions
             if risk_level != self.current_risk:
                 if self.current_risk != "Unknown":
                     self.log_event("RISK_LEVEL_CHANGED", {"from": self.current_risk, "to": risk_level})
                 self.current_risk = risk_level
                 
-                # Update Max Risk
                 if self.risk_levels.get(risk_level, 0) > self.risk_levels.get(self.session.maximum_risk_level, 0):
                     self.session.maximum_risk_level = risk_level
             
