@@ -5,7 +5,6 @@ import time
 import os
 import sys
 
-# Ensure the project root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__))))
 
 import config
@@ -14,7 +13,6 @@ from voice_assistant import VoiceAssistant
 class TestVoiceAssistant(unittest.TestCase):
     
     def setUp(self):
-        # Reset config to defaults
         config.VOICE_ENABLED = True
         config.TTS_ENABLED = True
         config.AUDIO_ALERT_ENABLED = True
@@ -35,16 +33,13 @@ class TestVoiceAssistant(unittest.TestCase):
         mock_tts.return_value = MagicMock()
         va = VoiceAssistant(self.cmd_queue, self.state_getter)
         
-        # Test start
         va.start()
         self.assertTrue(va.is_running())
         
-        # Test duplicate start (should not crash or create duplicate threads)
         thread1 = va._listener_thread
         va.start()
         self.assertEqual(thread1, va._listener_thread)
         
-        # Test stop
         va.stop()
         self.assertFalse(va.is_running())
         
