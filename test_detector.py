@@ -4,7 +4,6 @@ import unittest
 from unittest.mock import patch, MagicMock
 import numpy as np
 
-# Ensure the core module is discoverable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__))))
 
 import config
@@ -17,10 +16,8 @@ class TestDrowsyDetector(unittest.TestCase):
         self.detector = DrowsyDetector()
 
     def test_extract_eye_region_normal(self):
-        # Create a dummy 100x100 frame
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
         
-        # Dummy landmarks mapping to pixels 40,40 to 60,60
         class LM:
             def __init__(self, x, y):
                 self.x = x
@@ -28,10 +25,8 @@ class TestDrowsyDetector(unittest.TestCase):
                 
         landmarks = [LM(0.4, 0.4), LM(0.6, 0.6)]
         
-        # Test extraction
         crop = DrowsyDetector._extract_eye_region(frame, [0, 1], landmarks, 100, 100, padding=5)
         self.assertIsNotNone(crop)
-        # Expected shape: min(40)-5 to max(60)+5 => 35 to 65 => 30x30
         self.assertEqual(crop.shape, (30, 30, 3))
 
     def test_extract_eye_region_out_of_bounds(self):

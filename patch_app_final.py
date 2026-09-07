@@ -3,12 +3,10 @@ import re
 with open("app_final.py", "r", encoding="utf-8") as f:
     content = f.read()
 
-# Chunk 1: Remove redundant CNN and MediaPipe logic
 chunk1_regex = re.compile(r"# ── CNN Model Loading \(Optional\) ───────────────────────────.*?return \(A \+ B\) / \(2\.0 \* C\)", re.DOTALL)
 chunk1_replacement = """from core.detector import DrowsyDetector
 import config
 
-# ── Audio Setup ────────────────────────────────────────────
 pygame.mixer.init()
 
 def play_alert_sound(freq=1000, duration=0.3):
@@ -20,7 +18,6 @@ def play_alert_sound(freq=1000, duration=0.3):
 
 content = chunk1_regex.sub(chunk1_replacement, content)
 
-# Chunk 2: Metrics container
 chunk2_regex = re.compile(r"# Metrics.*?m3\.markdown\(f\"<div class='metric-card'><div class='metric-label'>Alerts</div><div class='metric-value'>0</div></div>\", unsafe_allow_html=True\)", re.DOTALL)
 chunk2_replacement = """# Metrics
     metrics_container = st.empty()
@@ -33,7 +30,6 @@ chunk2_replacement = """# Metrics
 
 content = chunk2_regex.sub(chunk2_replacement, content)
 
-# Chunk 3: The Detection Loop
 chunk3_regex = re.compile(r"# ── Detection Loop ─────────────────────────────────────────.*", re.DOTALL)
 chunk3_replacement = """# ── Detection Loop ─────────────────────────────────────────
 if state["detection_active"]:
@@ -51,7 +47,6 @@ if state["detection_active"]:
     last_alert = 0
     frame_count = 0
     
-    # Calibration mode
     if not state["calibrated"]:
         st.info("🎯 CALIBRATION: Keep eyes open for 5 seconds...")
         detector.start_calibration()

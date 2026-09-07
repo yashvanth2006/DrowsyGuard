@@ -11,7 +11,6 @@ import streamlit.components.v1 as components
 import os
 import config
 
-# ── Page Config ───────────────────────────────────────────
 st.set_page_config(
     page_title="DrowsyGuard — AI Driver Safety",
     page_icon="🚗",
@@ -169,7 +168,6 @@ setInterval(scrollToBottom, 500);
 </script>
 """, unsafe_allow_html=True)
 
-# ── Shared State ──────────────────────────────────────────
 if "state" not in st.session_state:
     st.session_state.state = {
         "detection_active": False,
@@ -190,7 +188,6 @@ if "state" not in st.session_state:
 state = st.session_state.state
 ASSISTANT_NAME = config.ASSISTANT_NAME
 
-# Voice Assistant Init
 if "voice_assistant" not in st.session_state:
     try:
         from voice_assistant import VoiceAssistant
@@ -198,14 +195,12 @@ if "voice_assistant" not in st.session_state:
     except Exception as e:
         logging.error(f"Voice assistant error: {e}")
 
-# Detector Init
 if "detector" not in st.session_state:
     from core.detector import DrowsyDetector
     st.session_state.detector = DrowsyDetector()
 
 detector = st.session_state.detector
 
-# ── Audio setup ───────────────────────────────────────────
 pygame.mixer.init()
 
 def play_alert():

@@ -5,7 +5,6 @@ import numpy as np
 import sys
 from core.detector import DrowsyDetector
 
-# ── Audio setup ───────────────────────────────────────────
 alert_sound = None
 try:
     pygame.mixer.init()
@@ -28,7 +27,6 @@ last_alert = 0
 def main():
     global last_alert
     
-    # Initialize the detector
     detector = DrowsyDetector()
     
     cap = cv2.VideoCapture(0)
@@ -57,7 +55,6 @@ def main():
                 time.sleep(0.1) # slight delay before retry
                 continue
             
-            # Reset on success
             consecutive_failures = 0
 
             try:
@@ -71,7 +68,6 @@ def main():
             alert = False
 
             if result.get("face_detected"):
-                # ── Display values ──
                 avg_ear = result.get("ear", 0.0)
                 mar = result.get("mar", 0.0)
                 cv2.putText(frame, f"EAR: {avg_ear:.2f}", (30, 40),
@@ -81,7 +77,6 @@ def main():
                 
                 y_offset = 100
                 
-                # CNN Status
                 if result.get("cnn_available"):
                     cnn_state = result.get("cnn_eye_state", "UNKNOWN")
                     left_conf = result.get("left_cnn_confidence", 0.0)
