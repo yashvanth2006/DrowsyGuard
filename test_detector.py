@@ -37,11 +37,9 @@ class TestDrowsyDetector(unittest.TestCase):
                 self.x = x
                 self.y = y
                 
-        # Landmarks way outside image boundaries
         landmarks = [LM(1.5, 1.5), LM(1.6, 1.6)]
         
         crop = DrowsyDetector._extract_eye_region(frame, [0, 1], landmarks, 100, 100, padding=10)
-        # Should be None if it hits x_min >= x_max (which it will, because max(0, 140) = 140, min(100, 170) = 100 => 140 >= 100)
         self.assertIsNone(crop)
 
     def test_preprocess_eye_for_cnn_empty(self):
@@ -59,7 +57,6 @@ class TestDrowsyDetector(unittest.TestCase):
 
     @patch('core.detector.mp')
     def test_tensorflow_unavailable(self, mock_mp):
-        # Simulate TF import failure
         with patch.dict('sys.modules', {'tensorflow.keras.models': None}):
             detector = DrowsyDetector()
             self.assertFalse(detector.cnn_available)
@@ -70,12 +67,10 @@ class TestDrowsyDetector(unittest.TestCase):
         self.detector.is_calibrated = True
         self.detector.calibrated_threshold = 0.25
         
-        # Test EAR only
         self.detector.closed_frames = config.EAR_CONSECUTIVE_FRAMES - 1
         
         with patch.object(self.detector, '_eye_aspect_ratio', return_value=0.20):
             with patch.object(self.detector, '_mouth_aspect_ratio', return_value=0.5):
-                # Fake mp_results
                 mock_results = MagicMock()
                 mock_results.multi_face_landmarks = [MagicMock()]
                 self.detector.face_mesh.process.return_value = mock_results

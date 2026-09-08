@@ -55,7 +55,6 @@ class TestVoiceAssistant(unittest.TestCase):
         
         va._process_command("nova start monitoring")
         
-        # Verify queue has START action
         cmd = self.cmd_queue.get_nowait()
         self.assertEqual(cmd["action"], "START")
 
@@ -78,7 +77,6 @@ class TestVoiceAssistant(unittest.TestCase):
         
         va._process_command("nova status")
         
-        # Verify TTS queue receives the status text
         tts_text = va.tts_queue.get_nowait()
         self.assertIn("inactive", tts_text.lower())
         self.assertIn("low", tts_text.lower())
@@ -88,17 +86,14 @@ class TestVoiceAssistant(unittest.TestCase):
     @patch('voice_assistant.sr.Microphone')
     @patch('voice_assistant.sr.Recognizer')
     def test_microphone_failure(self, mock_recognizer_cls, mock_mic, mock_tts):
-        # Simulate PyAudio missing / Microphone exception
         mock_mic.side_effect = Exception("No PyAudio installed")
         mock_tts.return_value = MagicMock()
         
         va = VoiceAssistant(self.cmd_queue, self.state_getter)
         va.start()
         
-        # Wait a moment for thread to fail
         time.sleep(0.5)
         
-        # The thread should have caught the exception and disabled itself gracefully
         self.assertFalse(va.is_running())
         
         # Should have dispatched disabled status

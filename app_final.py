@@ -14,7 +14,6 @@ import json
 from datetime import datetime
 from queue import Empty
 
-# ── Page Config ───────────────────────────────────────────
 st.set_page_config(
     page_title="DrowsyGuard Pro",
     page_icon="🚘",
@@ -22,7 +21,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS ────────────────────────────────────────────
 st.markdown("""
 <style>
 :root {
@@ -153,7 +151,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Session State ──────────────────────────────────────────
 if "state" not in st.session_state:
     st.session_state.state = {
         "detection_active": False,
@@ -199,7 +196,6 @@ if "voice_assistant" not in st.session_state:
 if "session_logger" not in st.session_state:
     st.session_state.session_logger = SessionLogger()
 
-# ── Audio Setup ────────────────────────────────────────────
 pygame.mixer.init()
 
 def play_alert_sound(freq=1000, duration=0.3):
@@ -221,7 +217,6 @@ def format_duration(seconds):
     secs = seconds % 60
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
-# ── Sidebar ───────────────────────────────────────────────
 with st.sidebar:
     st.markdown("<div class='dg-panel-title'>MONITORING</div>", unsafe_allow_html=True)
     ear_threshold = st.slider("Alert Threshold (% of baseline)", 50, 90, 70)
