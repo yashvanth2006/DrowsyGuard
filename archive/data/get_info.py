@@ -2,12 +2,10 @@ import os
 import json
 from collections import defaultdict
 
-# Base directory
 base_dir = 'data'
 categories = ['awake','sleepy']
 splits = ['train', 'val', 'test']
 
-# Function to count images in each split/category
 def count_images():
     image_counts = defaultdict(dict)
     for split in splits:
@@ -17,7 +15,6 @@ def count_images():
             image_counts[split][category] = num_images
     return image_counts
 
-# Function to generate directory tree without file names
 def generate_tree(startpath):
     tree_structure = []
     for dirpath, dirnames, _ in os.walk(startpath):  # Ignore filenames
@@ -27,7 +24,6 @@ def generate_tree(startpath):
     return '\n'.join(tree_structure)
 
 
-# Function to generate schema
 def generate_schema():
     schema = {
         "subject_id": "Unique identifier for each subject (37 subjects)",
@@ -47,7 +43,6 @@ def generate_schema():
     }
     return schema
 
-# Execute and print results
 if __name__ == "__main__":
     # Get image counts
     counts = count_images()
