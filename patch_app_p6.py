@@ -3,7 +3,6 @@ import re
 with open("app_final.py", "r", encoding="utf-8") as f:
     content = f.read()
 
-# Chunk 1: Session State Setup
 chunk1_regex = re.compile(r"# ── Session State ──────────────────────────────────────────.*?from core\.detector import DrowsyDetector.*?import config", re.DOTALL)
 chunk1_replacement = """# ── Session State ──────────────────────────────────────────
 if "state" not in st.session_state:
@@ -51,7 +50,6 @@ if "voice_assistant" not in st.session_state:
 content = chunk1_regex.sub(chunk1_replacement, content)
 
 
-# Chunk 2: Sidebar
 chunk2_regex = re.compile(r"ear_threshold = st\.slider\(\"Alert Threshold \(% of baseline\)\", 50, 90, 70\)\s+frame_threshold = st\.slider\(\"Alert Sensitivity \(frames\)\", 5, 30, 15\)")
 chunk2_replacement = """ear_threshold = st.slider("Alert Threshold (% of baseline)", 50, 90, 70)
     frame_threshold = st.slider("Alert Sensitivity (frames)", 5, 30, 15)
@@ -62,7 +60,6 @@ chunk2_replacement = """ear_threshold = st.slider("Alert Threshold (% of baselin
 content = chunk2_regex.sub(chunk2_replacement, content)
 
 
-# Chunk 3: Control Logic
 chunk3_regex = re.compile(r"# ── Control Logic ─────────────────────────────────────────.*?if calibrate_btn:\s+state\[\"calibrated\"\] = False", re.DOTALL)
 chunk3_replacement = """# ── Control Logic ─────────────────────────────────────────
 if start_btn:
@@ -83,7 +80,6 @@ if stop_btn:
 if calibrate_btn:
     state["calibrated"] = False
 
-# Process pending voice commands (Non-blocking)
 from queue import Empty
 try:
     while True:
@@ -107,7 +103,6 @@ except Empty:
 content = chunk3_regex.sub(chunk3_replacement, content)
 
 
-# Chunk 4: Detection Loop
 chunk4_regex = re.compile(r"frame_count \+= 1")
 chunk4_replacement = """frame_count += 1
         
