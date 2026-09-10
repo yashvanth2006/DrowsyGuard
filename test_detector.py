@@ -75,7 +75,6 @@ class TestDrowsyDetector(unittest.TestCase):
                 mock_results.multi_face_landmarks = [MagicMock()]
                 self.detector.face_mesh.process.return_value = mock_results
                 
-                # Should trigger since EAR is < 0.25
                 frame = np.zeros((100, 100, 3), dtype=np.uint8)
                 result = self.detector.process_frame(frame)
                 self.assertTrue(result["eyes_closed"])
@@ -86,7 +85,6 @@ class TestDrowsyDetector(unittest.TestCase):
         self.detector.is_calibrated = True
         self.detector.calibrated_threshold = 0.25
         
-        # CNN predicts closed (index 1 is 1.0)
         self.detector.cnn_model.predict.return_value = np.array([[0.0, 1.0]])
         
         self.detector.closed_frames = config.EAR_CONSECUTIVE_FRAMES - 1
@@ -110,12 +108,11 @@ class TestDrowsyDetector(unittest.TestCase):
         self.detector.is_calibrated = True
         self.detector.calibrated_threshold = 0.25
         
-        # CNN predicts OPEN (index 1 is 0.0) -> This should suppress the EAR geometric alert
         self.detector.cnn_model.predict.return_value = np.array([[1.0, 0.0]])
         
         self.detector.closed_frames = config.EAR_CONSECUTIVE_FRAMES - 1
         
-        with patch.object(self.detector, '_eye_aspect_ratio', return_value=0.20): # Geometric says closed
+        with patch.object(self.detector, '_eye_aspect_ratio', return_value=0.20):
             with patch.object(self.detector, '_mouth_aspect_ratio', return_value=0.5):
                 with patch.object(self.detector, '_extract_eye_region', return_value=np.zeros((10,10,3), dtype=np.uint8)):
                     mock_results = MagicMock()
@@ -125,7 +122,6 @@ class TestDrowsyDetector(unittest.TestCase):
                     frame = np.zeros((100, 100, 3), dtype=np.uint8)
                     result = self.detector.process_frame(frame)
                     
-                    # Because CNN strongly disagrees, eyes_closed should be FALSE
                     self.assertFalse(result["eyes_closed"])
                     self.assertEqual(result["cnn_eye_state"], "OPEN")
 
