@@ -43,7 +43,6 @@ class TestVoiceAssistant(unittest.TestCase):
         va.stop()
         self.assertFalse(va.is_running())
         
-        # Test duplicate stop
         va.stop()
         self.assertFalse(va.is_running())
 
@@ -96,7 +95,6 @@ class TestVoiceAssistant(unittest.TestCase):
         
         self.assertFalse(va.is_running())
         
-        # Should have dispatched disabled status
         statuses = []
         while not self.cmd_queue.empty():
             statuses.append(self.cmd_queue.get_nowait())
@@ -106,13 +104,11 @@ class TestVoiceAssistant(unittest.TestCase):
     @patch('voice_assistant.pyttsx3.init')
     @patch('voice_assistant.sr.Recognizer')
     def test_tts_failure_does_not_crash(self, mock_recognizer, mock_tts):
-        # Simulate pyttsx3 failure
         mock_tts.side_effect = Exception("TTS Engine Error")
         
         va = VoiceAssistant(self.cmd_queue, self.state_getter)
         va.start()
         
-        # The listener should still be running even if TTS failed
         time.sleep(0.5)
         self.assertTrue(va.is_running())
         
@@ -121,7 +117,6 @@ class TestVoiceAssistant(unittest.TestCase):
     @patch('voice_assistant.pyttsx3.init')
     @patch('voice_assistant.sr.Recognizer')
     def test_vosk_fallback(self, mock_recognizer, mock_tts):
-        # Simulate Vosk missing
         with patch.dict('sys.modules', {'vosk': None}):
             va = VoiceAssistant(self.cmd_queue, self.state_getter)
             self.assertIsNone(va.vosk_model)
