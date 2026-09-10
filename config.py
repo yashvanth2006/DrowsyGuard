@@ -12,14 +12,9 @@ CALIBRATION_FRAMES = 150
 DEFAULT_BASELINE_EAR = 0.30
 CALIBRATION_EAR_THRESHOLD_PERCENT = 70.0
 
-# ── 3. Eye Detection (Geometric) ────────────────────────────
-# Static EAR threshold if calibration is not used
 STATIC_EAR_THRESHOLD = 0.25
-# Number of consecutive frames the EAR must be below threshold to trigger an alert
 EAR_CONSECUTIVE_FRAMES = 15
 
-# ── 4. Mouth / Yawning ──────────────────────────────────────
-# Threshold for Mouth Aspect Ratio (MAR) to detect a yawn
 MAR_THRESHOLD = 0.75
 # Number of consecutive frames the MAR must be above threshold to trigger a yawn alert
 MAR_CONSECUTIVE_FRAMES = 15
