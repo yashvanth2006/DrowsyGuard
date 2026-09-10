@@ -28,7 +28,7 @@ def load_data(path):
                 continue
             img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
             data.append(img)
-            labels.append(label)   # 0=awake, 1=sleepy
+            labels.append(label)
     return np.array(data), np.array(labels)
 
 print("📂 Loading training data...")
@@ -75,16 +75,13 @@ history = model.fit(
     validation_data=(X_val, y_val)
 )
 
-# ── Evaluate ──────────────────────────────────────────────
 loss, acc = model.evaluate(X_val, y_val, verbose=0)
 print(f"\n✅ Validation Accuracy: {acc*100:.2f}%")
 print(f"   Validation Loss:     {loss:.4f}")
 
-# ── Save model ────────────────────────────────────────────
 model.save("eye_state_model.h5")
 print("💾 Model saved as eye_state_model.h5")
 
-# ── Plot training curves (for your report) ────────────────
 plt.figure(figsize=(12, 4))
 
 plt.subplot(1, 2, 1)
