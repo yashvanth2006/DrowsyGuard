@@ -106,7 +106,6 @@ content = chunk3_regex.sub(chunk3_replacement, content)
 chunk4_regex = re.compile(r"frame_count \+= 1")
 chunk4_replacement = """frame_count += 1
         
-        # Check queue during camera loop to stay responsive
         try:
             while True:
                 cmd = st.session_state.command_queue.get_nowait()
@@ -121,7 +120,6 @@ chunk4_replacement = """frame_count += 1
 content = chunk4_regex.sub(chunk4_replacement, content)
 
 
-# Chunk 5: Sync state dict at end of frame
 chunk5_regex = re.compile(r"if result\[\"eyes_closed\"\]:.*?alert_container\.markdown\(\"<div class='alert-safe'>✅ Driver alert and focused\.</div>\", unsafe_allow_html=True\)", re.DOTALL)
 chunk5_replacement = """if result["eyes_closed"]:
                 alert_container.markdown("<div class='alert-danger'>🚨 WAKE UP! Eyes detected closed!</div>", unsafe_allow_html=True)
@@ -130,7 +128,6 @@ chunk5_replacement = """if result["eyes_closed"]:
             else:
                 alert_container.markdown("<div class='alert-safe'>✅ Driver alert and focused.</div>", unsafe_allow_html=True)
                 
-            # Sync state dict for VoiceAssistant
             dur = "unknown time"
             if state["session_start"]:
                 elapsed = int(time.time() - state["session_start"])
@@ -148,12 +145,10 @@ chunk5_replacement = """if result["eyes_closed"]:
 content = chunk5_regex.sub(chunk5_replacement, content)
 
 
-# Chunk 6: Idle Loop
 chunk6_regex = re.compile(r"    if cap:\s+cap\.release\(\)")
 chunk6_replacement = """    if cap:
         cap.release()
 else:
-    # Idle loop checking for voice commands when camera is off
     import time
     time.sleep(0.5)
     st.rerun()"""

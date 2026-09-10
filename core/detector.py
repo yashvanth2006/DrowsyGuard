@@ -179,7 +179,6 @@ class DrowsyDetector:
                 result["state"] = "CALIBRATING"
                 return result
 
-            # CNN calculations
             cnn_alert = False
             if self.cnn_available and self.cnn_model is not None:
                 try:
@@ -193,7 +192,6 @@ class DrowsyDetector:
                         left_pred = self.cnn_model.predict(left_eye_input, verbose=0)[0]
                         right_pred = self.cnn_model.predict(right_eye_input, verbose=0)[0]
                         
-                        # Confidence for "closed" class (index 1)
                         result["left_cnn_confidence"] = float(left_pred[1] * 100)
                         result["right_cnn_confidence"] = float(right_pred[1] * 100)
                         
@@ -206,11 +204,9 @@ class DrowsyDetector:
                 except Exception as e:
                     logger.error(f"CNN prediction error: {e}")
 
-            # Eye closure logic
             threshold = self.calibrated_threshold if self.is_calibrated else config.STATIC_EAR_THRESHOLD
             geometric_alert = (avg_ear < threshold)
             
-            # Hybrid alert triggering (AND strategy)
             # Drowsy candidate if:
             # 1. EAR says closed AND CNN is unavailable (fallback)
             # OR 2. EAR says closed AND CNN confirms closed
@@ -233,7 +229,6 @@ class DrowsyDetector:
             
             result["closed_frames"] = self.closed_frames
 
-            # Yawn logic
             if mar > config.MAR_THRESHOLD:
                 self.yawn_frames += 1
                 if self.yawn_frames >= config.MAR_CONSECUTIVE_FRAMES:

@@ -70,7 +70,7 @@ class TestAnalytics(unittest.TestCase):
         self.assertEqual(self.logger.session.total_drowsy_events, 1)
         
         self.logger.update_metrics({"eyes_closed": True, "ear": 0.15}, "HIGH", False)
-        self.assertEqual(self.logger.session.total_drowsy_events, 1) # Should not increment
+        self.assertEqual(self.logger.session.total_drowsy_events, 1)
         
         self.logger.update_metrics({"eyes_closed": False, "ear": 0.3}, "LOW", False)
         self.assertFalse(self.logger.active_drowsy_episode)
@@ -91,7 +91,6 @@ class TestAnalytics(unittest.TestCase):
         
         events = [e for e in self.logger.session.events if e["event_type"] == "RISK_LEVEL_CHANGED"]
         
-        # LOW -> MEDIUM and MEDIUM -> HIGH
         self.assertEqual(len(events), 2)
         self.assertEqual(self.logger.session.maximum_risk_level, "HIGH")
 
@@ -116,9 +115,8 @@ class TestAnalytics(unittest.TestCase):
         mock_replace.side_effect = PermissionError("Mock write failure")
         
         self.logger.start_session()
-        self.logger.end_session() # Should catch the error and not crash
+        self.logger.end_session()
         
-        # Application should survive
 
     def test_session_isolation(self):
         logger1 = SessionLogger()
@@ -135,7 +133,6 @@ class TestAnalytics(unittest.TestCase):
 
     def test_cloud_disabled(self):
         self.assertFalse(config.CLOUD_ANALYTICS_ENABLED)
-        # There's no cloud logic in logger to test yet, but we verify it's disabled.
 
 if __name__ == '__main__':
     unittest.main()
