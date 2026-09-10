@@ -207,15 +207,12 @@ class DrowsyDetector:
             threshold = self.calibrated_threshold if self.is_calibrated else config.STATIC_EAR_THRESHOLD
             geometric_alert = (avg_ear < threshold)
             
-            # Drowsy candidate if:
-            # 1. EAR says closed AND CNN is unavailable (fallback)
-            # OR 2. EAR says closed AND CNN confirms closed
             drowsy_candidate = False
             if geometric_alert:
                 if not self.cnn_available or self.cnn_model is None:
-                    drowsy_candidate = True  # EAR-only fallback
+                    drowsy_candidate = True
                 elif cnn_alert:
-                    drowsy_candidate = True  # Both EAR and CNN say closed
+                    drowsy_candidate = True
                 else:
                     drowsy_candidate = False # CNN strongly says open, suppressing EAR
 
