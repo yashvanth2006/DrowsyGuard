@@ -19,8 +19,7 @@ def play_alert_sound(freq=1000, duration=0.3):
 content = chunk1_regex.sub(chunk1_replacement, content)
 
 chunk2_regex = re.compile(r"# Metrics.*?m3\.markdown\(f\"<div class='metric-card'><div class='metric-label'>Alerts</div><div class='metric-value'>0</div></div>\", unsafe_allow_html=True\)", re.DOTALL)
-chunk2_replacement = """# Metrics
-    metrics_container = st.empty()
+chunk2_replacement = """    metrics_container = st.empty()
     with metrics_container.container():
         m1, m2, m3, m4 = st.columns(4)
         m1.markdown(f"<div class='metric-card'><div class='metric-label'>Eye Openness</div><div class='metric-value'>0%</div></div>", unsafe_allow_html=True)
@@ -31,8 +30,7 @@ chunk2_replacement = """# Metrics
 content = chunk2_regex.sub(chunk2_replacement, content)
 
 chunk3_regex = re.compile(r"# ── Detection Loop ─────────────────────────────────────────.*", re.DOTALL)
-chunk3_replacement = """# ── Detection Loop ─────────────────────────────────────────
-if state["detection_active"]:
+chunk3_replacement = """if state["detection_active"]:
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -58,7 +56,6 @@ if state["detection_active"]:
         
         frame_count += 1
         
-        # Sync dynamic settings to detector
         config.STATIC_EAR_THRESHOLD = state.get("baseline_ear", 0.3) * (ear_threshold / 100.0)
         config.EAR_CONSECUTIVE_FRAMES = frame_threshold
         if state["calibrated"]:
@@ -74,14 +71,12 @@ if state["detection_active"]:
         else:
             state["current_ear"] = result["ear"]
             
-            # Alert Sound Logic
             if result["eyes_closed"] or result["yawning"]:
                 if time.time() - last_alert > 2:
                     state["alert_count"] += 1
                     play_alert_sound()
                     last_alert = time.time()
 
-        # Draw overlay
         h, w = frame.shape[:2]
         if result["face_detected"] and result.get("landmarks"):
             for idx in detector.LEFT_EYE + detector.RIGHT_EYE:
