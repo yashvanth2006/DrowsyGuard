@@ -231,7 +231,6 @@ with st.sidebar:
     st.markdown("<div class='dg-panel-title'>NOVA ASSISTANT</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='status-label'>Status: <span style='color:var(--accent); font-weight:600;'>{st.session_state.nova_status}</span></div>", unsafe_allow_html=True)
 
-# ── Header ───────────────────────────────────────────
 dur_str = "00:00:00"
 if state["session_start"] and state["detection_active"]:
     dur_str = format_duration(int(time.time() - state["session_start"]))
@@ -252,7 +251,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Process pending voice commands (Non-blocking) ──
 try:
     while True:
         cmd = st.session_state.command_queue.get_nowait()
@@ -275,7 +273,6 @@ try:
 except Empty:
     pass
 
-# ── Layout Containers ───────────────────────────────────────────
 main_col, side_col = st.columns([2.2, 1])
 
 with main_col:
@@ -285,7 +282,6 @@ with main_col:
     metrics_placeholder = st.empty()
     safety_state_placeholder = st.empty()
     
-    # Controls
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown("<div class='btn-primary'>", unsafe_allow_html=True)
@@ -304,7 +300,6 @@ with side_col:
     ai_status_placeholder = st.empty()
     telemetry_placeholder = st.empty()
     
-    # Emergency / Nova / Quick Guide
     st.markdown("""
     <div class='dg-panel'>
         <div class='dg-panel-title'>EMERGENCY CONTACT</div>

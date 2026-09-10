@@ -18,7 +18,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS ────────────────────────────────────────────
 st.markdown("""
 <style>
 /* Hide Streamlit defaults */
@@ -209,7 +208,6 @@ def play_alert():
     sound = pygame.sndarray.make_sound(np.column_stack([wave, wave]))
     sound.play()
 
-# ── Metrics Helper ────────────────────────────────────────
 def get_risk_level(ear):
     if ear > 0.30: return "Low", "status-alert"
     elif ear > 0.25: return "Medium", "text-electric"
@@ -223,7 +221,6 @@ def format_duration(start_time):
     secs = elapsed % 60
     return f"{mins:02d}:{secs:02d}"
 
-# ── Sidebar ───────────────────────────────────────────────
 with st.sidebar:
     st.markdown("<div class='glass-card' style='text-align: center;'>", unsafe_allow_html=True)
     st.markdown("<h2>🤖 Nova</h2>", unsafe_allow_html=True)
@@ -254,7 +251,6 @@ with st.sidebar:
         st.markdown("Developer: Yashvanth K")
         st.markdown("Method: Core DrowsyDetector (EAR + MAR + CNN)")
 
-# ── Header ────────────────────────────────────────────────
 h_col1, h_col2 = st.columns([3, 1])
 with h_col1:
     cnn_status = "Powered by CNN" if detector.cnn_available else "Geometric Detection"
@@ -265,7 +261,6 @@ with h_col2:
 
 st.markdown("<hr style='opacity: 0.2;'>", unsafe_allow_html=True)
 
-# ── Main Layout ───────────────────────────────────────────
 left_col, right_col = st.columns([3, 2])
 
 with left_col:

@@ -120,24 +120,19 @@ class TestVoiceAssistant(unittest.TestCase):
         with patch.dict('sys.modules', {'vosk': None}):
             va = VoiceAssistant(self.cmd_queue, self.state_getter)
             self.assertIsNone(va.vosk_model)
-            # The app should continue fine
             self.assertTrue(True)
 
     @patch('voice_assistant.pyttsx3.init')
     @patch('voice_assistant.sr.Recognizer')
     def test_google_fallback(self, mock_recognizer_cls, mock_tts):
-        # Mock Google recognition failing
         mock_recognizer = mock_recognizer_cls.return_value
         import speech_recognition as sr
         mock_recognizer.recognize_google.side_effect = sr.RequestError("API unavailable")
         
         va = VoiceAssistant(self.cmd_queue, self.state_getter)
         
-        # Should not crash on process
         try:
-            # We bypass the full thread for a unit test and simulate pipeline segment
             va.recognizer = mock_recognizer
-            # Just verify the exception handles correctly if called
             # Since _wake_word_pipeline loops, we don't call it fully here, but we tested exceptions in `test_microphone_failure`
             pass
         except Exception:
