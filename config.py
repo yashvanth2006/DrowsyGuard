@@ -16,20 +16,15 @@ STATIC_EAR_THRESHOLD = 0.25
 EAR_CONSECUTIVE_FRAMES = 15
 
 MAR_THRESHOLD = 0.75
-# Number of consecutive frames the MAR must be above threshold to trigger a yawn alert
 MAR_CONSECUTIVE_FRAMES = 15
 
-# ── 5. CNN ──────────────────────────────────────────────────
 CNN_MODEL_PATH = BASE_DIR / "eye_state_model.h5"
 CNN_INPUT_WIDTH = 24
 CNN_INPUT_HEIGHT = 24
 CNN_INPUT_CHANNELS = 1
-# Confidence percentage required to classify an eye as closed (0 to 100)
 CNN_CONFIDENCE_THRESHOLD = 70.0
 
-# ── 6. Alerts ───────────────────────────────────────────────
 AUDIO_ALERT_ENABLED = True
-# Cooldown between consecutive audio alerts (in seconds)
 ALERT_COOLDOWN_SECONDS = 2.0
 # Audio generation settings
 AUDIO_SAMPLE_RATE = 44100
