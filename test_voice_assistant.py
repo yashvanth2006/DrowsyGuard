@@ -133,7 +133,6 @@ class TestVoiceAssistant(unittest.TestCase):
         
         try:
             va.recognizer = mock_recognizer
-            # Since _wake_word_pipeline loops, we don't call it fully here, but we tested exceptions in `test_microphone_failure`
             pass
         except Exception:
             self.fail("Google fallback test raised an exception!")
