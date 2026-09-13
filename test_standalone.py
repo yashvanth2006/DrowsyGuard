@@ -44,9 +44,7 @@ class TestStandalone(unittest.TestCase):
         drowsy_detect.main()
         
         mock_detector_class.assert_called_once()
-        # Assert process_frame was called
         mock_detector_instance.process_frame.assert_called()
-        # Assert close was called
         mock_detector_instance.close.assert_called_once()
 
     def test_no_streamlit_dependency(self):

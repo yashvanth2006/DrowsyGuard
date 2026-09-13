@@ -26,30 +26,25 @@ CNN_CONFIDENCE_THRESHOLD = 70.0
 
 AUDIO_ALERT_ENABLED = True
 ALERT_COOLDOWN_SECONDS = 2.0
-# Audio generation settings
 AUDIO_SAMPLE_RATE = 44100
 AUDIO_FREQ = 1000
 AUDIO_DURATION = 0.5
 
-# ── 7. Voice Assistant ──────────────────────────────────────
 VOICE_ENABLED = True
 TTS_ENABLED = True
 
 ASSISTANT_NAME = "nova"
 WAKE_WORDS = ["nova", "no va", "nover", "over", "know va", "nola", "noa"]
 
-# Speech recognition timing limits (in seconds)
 WAKE_WORD_TIMEOUT = 10
 WAKE_WORD_PHRASE_TIME_LIMIT = 2
 
 COMMAND_TIMEOUT = 6
 COMMAND_PHRASE_TIME_LIMIT = 5
 
-# Text-to-Speech settings
 TTS_RATE = 175
 TTS_VOLUME = 1.0
 
-# Local offline speech model path
 VOSK_MODEL_PATH = BASE_DIR / "vosk-model-small-en-us"
 
 # ── 8. Analytics ────────────────────────────────────────────

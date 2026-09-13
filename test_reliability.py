@@ -35,7 +35,7 @@ class TestReliability(unittest.TestCase):
     def test_camera_persistent_read_failure(self, mock_detector_cls, mock_destroy, mock_videocapture):
         mock_cap = MagicMock()
         mock_cap.isOpened.return_value = True
-        mock_cap.read.return_value = (False, None) # Always fail
+        mock_cap.read.return_value = (False, None)
         mock_videocapture.return_value = mock_cap
         
         mock_detector_instance = MagicMock()
@@ -85,10 +85,8 @@ class TestReliability(unittest.TestCase):
         mock_detector_instance.process_frame.return_value = {"face_detected": False}
         mock_detector_cls.return_value = mock_detector_instance
 
-        # Main should complete successfully via 'q' key instead of breaking due to 5 failures
         drowsy_detect.main()
         
-        # Ensure cleanup was still done
         mock_cap.release.assert_called_once()
         mock_detector_instance.close.assert_called_once()
 
@@ -105,7 +103,6 @@ class TestReliability(unittest.TestCase):
         mock_detector_instance.process_frame.side_effect = Exception("Simulated Detector Error")
         mock_detector_cls.return_value = mock_detector_instance
 
-        # Main should catch exception and run finally block
         drowsy_detect.main()
         
         mock_cap.release.assert_called_once()

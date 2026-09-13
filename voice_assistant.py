@@ -57,7 +57,7 @@ class VoiceAssistant:
             return
             
         if self._running_event.is_set():
-            return # Already running
+            return
             
         self._running_event.set()
         
@@ -71,7 +71,6 @@ class VoiceAssistant:
     def stop(self):
         self._running_event.clear()
         if self._listener_thread and self._listener_thread is not threading.current_thread():
-            # Don't join indefinitely to avoid blocking
             self._listener_thread.join(timeout=1.0)
             self._listener_thread = None
         if self._tts_thread_obj and self._tts_thread_obj is not threading.current_thread():

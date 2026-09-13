@@ -52,7 +52,7 @@ def main():
                 if consecutive_failures >= 5:
                     print("[ERROR] Camera disconnected or failed to read 5 times consecutively. Exiting.")
                     break
-                time.sleep(0.1) # slight delay before retry
+                time.sleep(0.1)
                 continue
             
             consecutive_failures = 0
@@ -104,11 +104,9 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
                 y_offset += 30
 
-                # ── Alert display ──
                 if alert:
                     cv2.putText(frame, "⚠ WAKE UP!", (30, y_offset),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
-                    # Play beep every 2 seconds
                     if time.time() - last_alert > 2:
                         play_alert()
                         last_alert = time.time()

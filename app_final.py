@@ -471,7 +471,6 @@ if not state["detection_active"]:
     render_safety_state("IDLE", "System idle. Ready to monitor.")
     render_side_panels("OFFLINE", "var(--text-secondary)", "UNKNOWN", 0, "var(--text-secondary)", "UNKNOWN", 0.0, 0.0, 0.0)
 
-# ── Detection Loop ─────────────────────────────────────────
 if state["detection_active"]:
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -497,7 +496,6 @@ if state["detection_active"]:
         
         frame_count += 1
         
-        # Check queue
         try:
             while True:
                 cmd = st.session_state.command_queue.get_nowait()
@@ -511,7 +509,6 @@ if state["detection_active"]:
         except Empty:
             pass
         
-        # Sync dynamic settings
         config.STATIC_EAR_THRESHOLD = state.get("baseline_ear", 0.3) * (ear_threshold / 100.0)
         config.EAR_CONSECUTIVE_FRAMES = frame_threshold
         if state["calibrated"]:
@@ -519,7 +516,6 @@ if state["detection_active"]:
 
         result = detector.process_frame(frame)
         
-        # Handle state logic
         if result["state"] == "CALIBRATING":
             if detector.is_calibrated:
                 state["baseline_ear"] = detector.baseline_ear
@@ -537,7 +533,6 @@ if state["detection_active"]:
             risk_level, _ = get_risk_level(state["current_ear"], state.get("baseline_ear", 0.3))
             st.session_state.session_logger.update_metrics(result, risk_level, alert_triggered_now)
 
-        # Draw minimalistic overlay on frame
         h, w = frame.shape[:2]
         if result["face_detected"] and result.get("landmarks"):
             # Subtle eye landmarks
