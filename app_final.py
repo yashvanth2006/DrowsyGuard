@@ -276,7 +276,6 @@ except Empty:
 main_col, side_col = st.columns([2.2, 1])
 
 with main_col:
-    # We will inject the video feed here during the loop, so create empty placeholder
     camera_placeholder = st.empty()
     
     metrics_placeholder = st.empty()
@@ -323,7 +322,6 @@ with side_col:
     </div>
     """, unsafe_allow_html=True)
     
-    # Recent Sessions
     history = st.session_state.session_logger.get_session_history()
     if history:
         sess_html = "<div class='dg-panel'><div class='dg-panel-title'>RECENT SESSIONS</div>"
@@ -344,7 +342,6 @@ with side_col:
         st.markdown(sess_html, unsafe_allow_html=True)
 
 
-# ── Control Logic ─────────────────────────────────────────
 if start_btn:
     state["detection_active"] = True
     if not state["session_start"]:
@@ -374,7 +371,6 @@ if calibrate_btn:
         st.session_state.session_logger.start_session()
     st.rerun()
 
-# Default empty UI state rendering before/during idle
 def render_metrics(openness, risk_level, risk_color, alerts, cnn_status, cnn_color):
     metrics_placeholder.markdown(f"""
     <div class='dg-metric-row'>
@@ -464,7 +460,6 @@ def render_side_panels(driver_state, driver_color, risk_level, risk_pct, risk_ba
     </div>
     """, unsafe_allow_html=True)
 
-# Initial idle rendering
 if not state["detection_active"]:
     camera_placeholder.markdown("""
     <div class='camera-wrapper' style='height:480px; display:flex; align-items:center; justify-content:center; flex-direction:column;'>
