@@ -17,7 +17,7 @@ def count_images():
 
 def generate_tree(startpath):
     tree_structure = []
-    for dirpath, dirnames, _ in os.walk(startpath):  # Ignore filenames
+    for dirpath, dirnames, _ in os.walk(startpath):
         level = dirpath.replace(startpath, '').count(os.sep)
         indent = ' ' * 4 * level
         tree_structure.append(f"{indent}{os.path.basename(dirpath)}/")
@@ -44,17 +44,14 @@ def generate_schema():
     return schema
 
 if __name__ == "__main__":
-    # Get image counts
     counts = count_images()
     print("Image counts per split and category:")
     print(json.dumps(counts, indent=4))
 
-    # Get directory tree
     tree = generate_tree(base_dir)
     print("\nDirectory tree:")
     print(tree)
 
-    # Get schema details
     schema = generate_schema()
     print("\nDataset schema:")
     print(json.dumps(schema, indent=4))
