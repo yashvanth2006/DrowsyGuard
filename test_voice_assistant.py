@@ -91,11 +91,8 @@ class TestVoiceAssistant(unittest.TestCase):
         va = VoiceAssistant(self.cmd_queue, self.state_getter)
         va.start()
         
-        # Wait for the thread to stop due to microphone failure (up to 2 seconds)
-        for _ in range(20):
-            if not va.is_running():
-                break
-            time.sleep(0.1)
+        if va._listener_thread:
+            va._listener_thread.join(timeout=5.0)
         
         self.assertFalse(va.is_running())
         
