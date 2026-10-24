@@ -1,142 +1,145 @@
 import cv2
-import numpy as np
-from scipy.spatial import distance
-import mediapipe as mp
-import pygame
 import time
+import pygame
+import numpy as np
+import sys
+from core.detector import DrowsyDetector
 
-# ── Audio setup ───────────────────────────────────────────
-pygame.mixer.init()
+alert_sound = None
+try:
+    pygame.mixer.init()
+    sample_rate = 44100
+    duration = 0.5
+    frequency = 1000
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    wave = (np.sin(2 * np.pi * frequency * t) * 32767).astype(np.int16)
+    stereo = np.column_stack([wave, wave])
+    alert_sound = pygame.sndarray.make_sound(stereo)
+except Exception as e:
+    print(f"[WARNING] Audio initialization failed: {e}")
 
 def play_alert():
-    # Generates a beep sound without needing an audio file
-    import numpy as np
-    sample_rate = 44100
-    duration    = 0.5
-    frequency   = 1000
-    t      = np.linspace(0, duration, int(sample_rate * duration))
-    wave   = (np.sin(2 * np.pi * frequency * t) * 32767).astype(np.int16)
-    stereo = np.column_stack([wave, wave])
-    sound  = pygame.sndarray.make_sound(stereo)
-    sound.play()
+    if alert_sound:
+        alert_sound.play()
 
-# ── EAR formula ──────────────────────────────────────────
-def eye_aspect_ratio(eye_points, landmarks, w, h):
-    def pt(idx):
-        lm = landmarks[idx]
-        return np.array([lm.x * w, lm.y * h])
-    A = distance.euclidean(pt(eye_points[1]), pt(eye_points[5]))
-    B = distance.euclidean(pt(eye_points[2]), pt(eye_points[4]))
-    C = distance.euclidean(pt(eye_points[0]), pt(eye_points[3]))
-    return (A + B) / (2.0 * C)
+last_alert = 0
 
-# ── MAR formula ──────────────────────────────────────────
-def mouth_aspect_ratio(mouth_points, landmarks, w, h):
-    def pt(idx):
-        lm = landmarks[idx]
-        return np.array([lm.x * w, lm.y * h])
-    A = distance.euclidean(pt(mouth_points[1]), pt(mouth_points[7]))
-    B = distance.euclidean(pt(mouth_points[2]), pt(mouth_points[6]))
-    C = distance.euclidean(pt(mouth_points[3]), pt(mouth_points[5]))
-    D = distance.euclidean(pt(mouth_points[0]), pt(mouth_points[4]))
-    return (A + B + C) / (2.0 * D)
+def main():
+    global last_alert
+    
+    detector = DrowsyDetector()
+    
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("[ERROR] Unable to open camera.")
+        print("Please check that your webcam is connected and not being used by another application.")
+        detector.close()
+        try:
+            pygame.mixer.quit()
+        except Exception:
+            pass
+        sys.exit(1)
+        
+    print("[INFO] DrowsyGuard v2 started - press Q to quit, C to calibrate, R to reset calibration")
 
-# ── MediaPipe setup ───────────────────────────────────────
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    max_num_faces=1,
-    refine_landmarks=True,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
+    consecutive_failures = 0
+    
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                consecutive_failures += 1
+                if consecutive_failures >= 5:
+                    print("[ERROR] Camera disconnected or failed to read 5 times consecutively. Exiting.")
+                    break
+                time.sleep(0.1)
+                continue
+            
+            consecutive_failures = 0
 
-# Landmark indices
-LEFT_EYE  = [362, 385, 387, 263, 373, 380]
-RIGHT_EYE = [33,  160, 158, 133, 153, 144]
-MOUTH     = [61, 39, 269, 405, 291, 375, 321, 308]
+            try:
+                result = detector.process_frame(frame)
+            except Exception as e:
+                print(f"[ERROR] Detector processing failed: {type(e).__name__}: {e}")
+                break
+            
+            status_text = "NORMAL"
+            status_color = (0, 255, 0)
+            alert = False
 
-# ── Thresholds ────────────────────────────────────────────
-EAR_THRESHOLD    = 0.25
-MAR_THRESHOLD    = 0.6
-FRAME_THRESHOLD  = 20
-YAWN_THRESHOLD   = 15
+            if result.get("face_detected"):
+                avg_ear = result.get("ear", 0.0)
+                mar = result.get("mar", 0.0)
+                cv2.putText(frame, f"EAR: {avg_ear:.2f}", (30, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(frame, f"MAR: {mar:.2f}", (30, 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                
+                y_offset = 100
+                
+                if result.get("cnn_available"):
+                    cnn_state = result.get("cnn_eye_state", "UNKNOWN")
+                    left_conf = result.get("left_cnn_confidence", 0.0)
+                    right_conf = result.get("right_cnn_confidence", 0.0)
+                    cv2.putText(frame, f"CNN: {cnn_state} (L:{left_conf:.0f}% R:{right_conf:.0f}%)", (30, y_offset),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                    y_offset += 30
 
-ear_counter  = 0
-yawn_counter = 0
-last_alert   = 0
+                state = result.get("state", "NORMAL")
+                if state == "CALIBRATING":
+                    status_text = "CALIBRATING..."
+                    status_color = (255, 255, 0)
+                elif state == "DROWSY":
+                    status_text = "DROWSY! EYES CLOSED!"
+                    status_color = (0, 0, 255)
+                    alert = True
+                elif state == "YAWNING":
+                    status_text = "DROWSY! YAWNING!"
+                    status_color = (0, 165, 255)
+                    alert = True
+                else:
+                    status_text = state
 
-# ── Webcam loop ───────────────────────────────────────────
-cap = cv2.VideoCapture(0)
-print("✅ DrowsyGuard v2 started — press Q to quit")
+                cv2.putText(frame, f"Status: {status_text}", (30, y_offset),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+                y_offset += 30
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+                if alert:
+                    cv2.putText(frame, "⚠ WAKE UP!", (30, y_offset),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                    if time.time() - last_alert > 2:
+                        play_alert()
+                        last_alert = time.time()
+                
+                if result.get("is_calibrated"):
+                    cv2.putText(frame, "Calibrated", (frame.shape[1] - 120, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-    h, w = frame.shape[:2]
-    rgb     = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(rgb)
+            else:
+                cv2.putText(frame, "No face detected", (30, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
-    status_text  = "ALERT"
-    status_color = (0, 255, 0)
-    alert        = False
+            cv2.imshow("DrowsyGuard", frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+            elif key == ord('c'):
+                detector.start_calibration()
+            elif key == ord('r'):
+                detector.reset_calibration()
 
-    if results.multi_face_landmarks:
-        landmarks = results.multi_face_landmarks[0].landmark
+    finally:
+        cap.release()
+        try:
+            detector.close()
+        except Exception:
+            pass
+        cv2.destroyAllWindows()
+        try:
+            pygame.mixer.quit()
+        except Exception:
+            pass
 
-        # ── EAR ──
-        left_ear  = eye_aspect_ratio(LEFT_EYE,  landmarks, w, h)
-        right_ear = eye_aspect_ratio(RIGHT_EYE, landmarks, w, h)
-        avg_ear   = (left_ear + right_ear) / 2.0
-
-        # ── MAR ──
-        mar = mouth_aspect_ratio(MOUTH, landmarks, w, h)
-
-        # ── Display values ──
-        cv2.putText(frame, f"EAR: {avg_ear:.2f}", (30, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame, f"MAR: {mar:.2f}", (30, 70),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-
-        # ── Drowsiness logic ──
-        if avg_ear < EAR_THRESHOLD:
-            ear_counter += 1
-            if ear_counter >= FRAME_THRESHOLD:
-                status_text  = "DROWSY! EYES CLOSED!"
-                status_color = (0, 0, 255)
-                alert        = True
-        else:
-            ear_counter = 0
-
-        if mar > MAR_THRESHOLD:
-            yawn_counter += 1
-            if yawn_counter >= YAWN_THRESHOLD:
-                status_text  = "DROWSY! YAWNING!"
-                status_color = (0, 165, 255)
-                alert        = True
-        else:
-            yawn_counter = 0
-
-        # ── Alert display ──
-        if alert:
-            cv2.putText(frame, "⚠ WAKE UP!", (30, 130),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
-            # Play beep every 2 seconds
-            if time.time() - last_alert > 2:
-                play_alert()
-                last_alert = time.time()
-
-        cv2.putText(frame, f"Status: {status_text}", (30, 110),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-
-    else:
-        cv2.putText(frame, "No face detected", (30, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-
-    cv2.imshow("DrowsyGuard", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()

@@ -14,7 +14,6 @@ class DrowsyDetector:
     MOUTH = [61, 39, 269, 405, 291, 375, 321, 308]
 
     def __init__(self):
-        # MediaPipe initialization
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=1, 
@@ -23,19 +22,16 @@ class DrowsyDetector:
             min_tracking_confidence=0.5
         )
 
-        # CNN initialization
         self.cnn_model = None
         self.cnn_available = False
         self._load_cnn()
 
-        # Calibration state
         self.is_calibrated = False
         self.is_calibrating = False
         self.calibration_samples = []
         self.baseline_ear = config.DEFAULT_BASELINE_EAR
         self.calibrated_threshold = config.STATIC_EAR_THRESHOLD
 
-        # Detection state
         self.closed_frames = 0
         self.yawn_frames = 0
 
@@ -81,10 +77,15 @@ class DrowsyDetector:
         y_min = int(max(0, np.min(points[:, 1]) - padding))
         y_max = int(min(h, np.max(points[:, 1]) + padding))
         
+        if x_min >= x_max or y_min >= y_max:
+            return None
+            
         return frame[y_min:y_max, x_min:x_max]
 
     @staticmethod
     def _preprocess_eye_for_cnn(eye_region):
+        if eye_region is None or eye_region.size == 0:
+            return None
         try:
             if len(eye_region.shape) == 3:
                 eye_gray = cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY)
@@ -127,6 +128,7 @@ class DrowsyDetector:
     def process_frame(self, frame):
         result = {
             "face_detected": False,
+            "landmarks": None,
             "left_ear": 0.0,
             "right_ear": 0.0,
             "ear": 0.0,
@@ -134,6 +136,7 @@ class DrowsyDetector:
             "left_cnn_confidence": 0.0,
             "right_cnn_confidence": 0.0,
             "cnn_available": self.cnn_available,
+            "cnn_eye_state": "CNN_UNAVAILABLE" if not self.cnn_available else "UNKNOWN",
             "eyes_closed": False,
             "closed_frames": self.closed_frames,
             "yawning": False,
@@ -159,8 +162,8 @@ class DrowsyDetector:
         if mp_results.multi_face_landmarks:
             result["face_detected"] = True
             landmarks = mp_results.multi_face_landmarks[0].landmark
+            result["landmarks"] = landmarks
 
-            # Geometric calculations
             left_ear = self._eye_aspect_ratio(self.LEFT_EYE, landmarks, w, h)
             right_ear = self._eye_aspect_ratio(self.RIGHT_EYE, landmarks, w, h)
             avg_ear = (left_ear + right_ear) / 2.0
@@ -176,7 +179,6 @@ class DrowsyDetector:
                 result["state"] = "CALIBRATING"
                 return result
 
-            # CNN calculations
             cnn_alert = False
             if self.cnn_available and self.cnn_model is not None:
                 try:
@@ -190,22 +192,31 @@ class DrowsyDetector:
                         left_pred = self.cnn_model.predict(left_eye_input, verbose=0)[0]
                         right_pred = self.cnn_model.predict(right_eye_input, verbose=0)[0]
                         
-                        # Confidence for "closed" class (index 1)
                         result["left_cnn_confidence"] = float(left_pred[1] * 100)
                         result["right_cnn_confidence"] = float(right_pred[1] * 100)
                         
                         if result["left_cnn_confidence"] > config.CNN_CONFIDENCE_THRESHOLD and \
                            result["right_cnn_confidence"] > config.CNN_CONFIDENCE_THRESHOLD:
                             cnn_alert = True
+                            result["cnn_eye_state"] = "CLOSED"
+                        else:
+                            result["cnn_eye_state"] = "OPEN"
                 except Exception as e:
                     logger.error(f"CNN prediction error: {e}")
 
-            # Eye closure logic
             threshold = self.calibrated_threshold if self.is_calibrated else config.STATIC_EAR_THRESHOLD
             geometric_alert = (avg_ear < threshold)
             
-            # Hybrid alert triggering
-            if geometric_alert or cnn_alert:
+            drowsy_candidate = False
+            if geometric_alert:
+                if not self.cnn_available or self.cnn_model is None:
+                    drowsy_candidate = True
+                elif cnn_alert:
+                    drowsy_candidate = True
+                else:
+                    drowsy_candidate = False # CNN strongly says open, suppressing EAR
+
+            if drowsy_candidate:
                 self.closed_frames += 1
                 if self.closed_frames >= config.EAR_CONSECUTIVE_FRAMES:
                     result["eyes_closed"] = True
@@ -215,7 +226,6 @@ class DrowsyDetector:
             
             result["closed_frames"] = self.closed_frames
 
-            # Yawn logic
             if mar > config.MAR_THRESHOLD:
                 self.yawn_frames += 1
                 if self.yawn_frames >= config.MAR_CONSECUTIVE_FRAMES:
