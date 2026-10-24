@@ -55,6 +55,14 @@ To launch the main Streamlit interface:
 streamlit run app_final.py
 ```
 
+## 8.1 Web / Cloud Deployment (Streamlit Community Cloud)
+DrowsyGuard Pro is equipped with **WebRTC** browser video streaming and HTML5 Web Audio alarms for seamless cloud hosting:
+1. Push your repository to GitHub.
+2. Sign in to [share.streamlit.io](https://share.streamlit.io).
+3. Select your repository and set the **Main file path** to `app_final.py`.
+4. Click **Deploy**.
+5. Visitors can now access the app via HTTPS in any web browser (desktop or mobile), grant webcam access, and run AI driver drowsiness monitoring with zero client installation required.
+
 ## 9. Running Standalone Detector
 To launch the headless OpenCV standalone detector:
 ```bash

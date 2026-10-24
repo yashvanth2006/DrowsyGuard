@@ -14,6 +14,13 @@ import json
 from datetime import datetime
 from queue import Empty
 
+try:
+    import av
+    from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+    WEBRTC_AVAILABLE = True
+except ImportError:
+    WEBRTC_AVAILABLE = False
+
 st.set_page_config(
     page_title="DrowsyGuard Pro",
     page_icon="🚘",
@@ -188,22 +195,59 @@ from analytics.logger import SessionLogger
 import config
 
 if "voice_assistant" not in st.session_state:
-    def state_getter():
-        return st.session_state.app_state_dict
-    st.session_state.voice_assistant = VoiceAssistant(st.session_state.command_queue, state_getter)
-    st.session_state.voice_assistant.start()
+    try:
+        def state_getter():
+            return st.session_state.app_state_dict
+        st.session_state.voice_assistant = VoiceAssistant(st.session_state.command_queue, state_getter)
+        st.session_state.voice_assistant.start()
+    except Exception as e:
+        st.session_state.voice_assistant = None
+        st.session_state.nova_status = "○ LOCAL ONLY"
 
 if "session_logger" not in st.session_state:
     st.session_state.session_logger = SessionLogger()
 
-pygame.mixer.init()
+try:
+    pygame.mixer.init()
+except Exception:
+    pass
+
+browser_audio_placeholder = st.empty()
+
+def trigger_browser_audio():
+    audio_js = """
+    <script>
+    (function() {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            const ctx = new AudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(1000, ctx.currentTime);
+            gain.gain.setValueAtTime(0.35, ctx.currentTime);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.35);
+        } catch(e) {}
+    })();
+    </script>
+    """
+    browser_audio_placeholder.markdown(audio_js, unsafe_allow_html=True)
 
 def play_alert_sound(freq=1000, duration=0.3):
-    sample_rate = 44100
-    t = np.linspace(0, duration, int(sample_rate * duration))
-    wave = (np.sin(2 * np.pi * freq * t) * 32767).astype(np.int16)
-    sound = pygame.sndarray.make_sound(np.column_stack([wave, wave]))
-    sound.play()
+    trigger_browser_audio()
+    try:
+        if pygame.mixer.get_init():
+            sample_rate = 44100
+            t = np.linspace(0, duration, int(sample_rate * duration))
+            wave = (np.sin(2 * np.pi * freq * t) * 32767).astype(np.int16)
+            sound = pygame.sndarray.make_sound(np.column_stack([wave, wave]))
+            sound.play()
+    except Exception:
+        pass
 
 def get_risk_level(ear, baseline):
     ratio = ear / baseline if baseline > 0 else 1
@@ -218,6 +262,15 @@ def format_duration(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 with st.sidebar:
+    st.markdown("<div class='dg-panel-title'>CAMERA SOURCE</div>", unsafe_allow_html=True)
+    camera_mode = st.radio(
+        "Camera Mode",
+        ["Browser Webcam (WebRTC)", "Local USB Camera (OpenCV)"] if WEBRTC_AVAILABLE else ["Local USB Camera (OpenCV)"],
+        index=0,
+        help="Use Browser Webcam for cloud hosting / web browser access. Use Local USB Camera when running locally."
+    )
+    
+    st.markdown("<hr style='border-color: rgba(255,255,255,0.1)'>", unsafe_allow_html=True)
     st.markdown("<div class='dg-panel-title'>MONITORING</div>", unsafe_allow_html=True)
     ear_threshold = st.slider("Alert Threshold (% of baseline)", 50, 90, 70)
     frame_threshold = st.slider("Alert Sensitivity (frames)", 5, 30, 15)
@@ -460,111 +513,90 @@ def render_side_panels(driver_state, driver_color, risk_level, risk_pct, risk_ba
     </div>
     """, unsafe_allow_html=True)
 
-if not state["detection_active"]:
-    camera_placeholder.markdown("""
-    <div class='camera-wrapper' style='height:480px; display:flex; align-items:center; justify-content:center; flex-direction:column;'>
-        <div style='color:var(--text-secondary); font-size:3rem; margin-bottom:1rem;'>📷</div>
-        <div style='color:var(--text-secondary); font-weight:600; letter-spacing:0.1em;'>CAMERA OFFLINE</div>
-    </div>
-    """, unsafe_allow_html=True)
-    render_metrics("--", "--", "var(--text-secondary)", state["alert_count"], "WAIT", "var(--text-secondary)")
-    render_safety_state("IDLE", "System idle. Ready to monitor.")
-    render_side_panels("OFFLINE", "var(--text-secondary)", "UNKNOWN", 0, "var(--text-secondary)", "UNKNOWN", 0.0, 0.0, 0.0)
+if camera_mode == "Browser Webcam (WebRTC)" and WEBRTC_AVAILABLE:
+    class DrowsyWebRTCProcessor:
+        def __init__(self):
+            self.detector = DrowsyDetector()
+            self.latest_result = None
+            self.lock = threading.Lock()
+            self.alert_count = 0
+            self.last_alert_time = 0
+            self.baseline_ear = 0.30
+            self.is_calibrated = False
 
-if state["detection_active"]:
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 30)
-    
-    detector = DrowsyDetector()
-    if state["calibrated"]:
-        detector.baseline_ear = state["baseline_ear"]
-        detector.calibrated_threshold = state["baseline_ear"] * (ear_threshold / 100.0)
-        detector.is_calibrated = True
-    
-    last_alert = 0
-    frame_count = 0
-    
-    if not state["calibrated"]:
-        detector.start_calibration()
-    
-    while cap.isOpened() and state["detection_active"]:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        frame_count += 1
-        
-        try:
-            while True:
-                cmd = st.session_state.command_queue.get_nowait()
-                action = cmd.get("action")
-                st.session_state.session_logger.log_event("VOICE_COMMAND", {"action": action})
-                if action == "STOP":
-                    state["detection_active"] = False
-                    st.session_state.session_logger.end_session()
-                elif action == "NOVA_STATUS":
-                    st.session_state.nova_status = cmd.get("status", "○ OFFLINE").upper()
-        except Empty:
-            pass
-        
-        config.STATIC_EAR_THRESHOLD = state.get("baseline_ear", 0.3) * (ear_threshold / 100.0)
-        config.EAR_CONSECUTIVE_FRAMES = frame_threshold
-        if state["calibrated"]:
-            detector.calibrated_threshold = config.STATIC_EAR_THRESHOLD
+        def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+            img = frame.to_ndarray(format="bgr24")
+            
+            if self.is_calibrated:
+                self.detector.is_calibrated = True
+                self.detector.baseline_ear = self.baseline_ear
+                self.detector.calibrated_threshold = self.baseline_ear * (ear_threshold / 100.0)
+            else:
+                if not self.detector.is_calibrating and not self.detector.is_calibrated:
+                    self.detector.start_calibration()
+                    
+            config.STATIC_EAR_THRESHOLD = self.baseline_ear * (ear_threshold / 100.0)
+            config.EAR_CONSECUTIVE_FRAMES = frame_threshold
 
-        result = detector.process_frame(frame)
-        
-        if result["state"] == "CALIBRATING":
-            if detector.is_calibrated:
-                state["baseline_ear"] = detector.baseline_ear
+            result = self.detector.process_frame(img)
+            
+            h, w = img.shape[:2]
+            if result.get("face_detected") and result.get("landmarks"):
+                for idx in self.detector.LEFT_EYE + self.detector.RIGHT_EYE:
+                    lm = result["landmarks"][idx]
+                    x, y = int(lm.x * w), int(lm.y * h)
+                    cv2.circle(img, (x, y), 1, (0, 212, 255), -1)
+
+            now = time.time()
+            if (result.get("eyes_closed") or result.get("yawning")) and (now - self.last_alert_time > 2.0):
+                self.alert_count += 1
+                self.last_alert_time = now
+
+            with self.lock:
+                self.latest_result = result
+                if result.get("state") == "CALIBRATING" and self.detector.is_calibrated:
+                    self.baseline_ear = self.detector.baseline_ear
+                    self.is_calibrated = True
+
+            return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    RTC_CONFIG = RTCConfiguration(
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
+    
+    with camera_placeholder.container():
+        st.markdown("<div style='margin-bottom:8px; font-size:0.8rem; color:var(--text-secondary);'>Allow browser camera permissions to begin WebRTC monitoring:</div>", unsafe_allow_html=True)
+        webrtc_ctx = webrtc_streamer(
+            key="drowsyguard-webrtc-stream",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=RTC_CONFIG,
+            video_processor_factory=DrowsyWebRTCProcessor,
+            media_stream_constraints={"video": True, "audio": False},
+            async_processing=True,
+        )
+
+    if webrtc_ctx.state.playing and webrtc_ctx.video_processor:
+        state["detection_active"] = True
+        if not state["session_start"]:
+            state["session_start"] = time.time()
+            st.session_state.session_logger.start_session()
+            
+        with webrtc_ctx.video_processor.lock:
+            result = webrtc_ctx.video_processor.latest_result
+            if webrtc_ctx.video_processor.is_calibrated and not state["calibrated"]:
+                state["baseline_ear"] = webrtc_ctx.video_processor.baseline_ear
                 state["calibrated"] = True
-        else:
+            state["alert_count"] = webrtc_ctx.video_processor.alert_count
+
+        if result:
             state["current_ear"] = result["ear"]
-            alert_triggered_now = False
-            if result["eyes_closed"] or result["yawning"]:
-                if time.time() - last_alert > 2:
-                    state["alert_count"] += 1
-                    play_alert_sound()
-                    last_alert = time.time()
-                    alert_triggered_now = True
+            if result.get("eyes_closed") or result.get("yawning"):
+                play_alert_sound()
+                st.session_state.session_logger.update_metrics(result, "HIGH", True)
+            else:
+                risk_lvl, _ = get_risk_level(state["current_ear"], state.get("baseline_ear", 0.3))
+                st.session_state.session_logger.update_metrics(result, risk_lvl, False)
 
-            risk_level, _ = get_risk_level(state["current_ear"], state.get("baseline_ear", 0.3))
-            st.session_state.session_logger.update_metrics(result, risk_level, alert_triggered_now)
-
-        h, w = frame.shape[:2]
-        if result["face_detected"] and result.get("landmarks"):
-            # Subtle eye landmarks
-            for idx in detector.LEFT_EYE + detector.RIGHT_EYE:
-                lm = result["landmarks"][idx]
-                x, y = int(lm.x * w), int(lm.y * h)
-                cv2.circle(frame, (x, y), 1, (0, 212, 255), -1) # Cyan tracking
-        
-        # Display Video via HTML wrapper technique
-        frame_resized = cv2.resize(frame, (640, 480))
-        ret_jpg, buffer = cv2.imencode('.jpg', frame_resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        
-        if ret_jpg:
-            import base64
-            b64 = base64.b64encode(buffer).decode("utf-8")
-            
-            face_status = "FACE DETECTED" if result["face_detected"] else "NO FACE DETECTED"
-            ear_status = f"EAR {result['ear']:.2f}" if result["face_detected"] else ""
-            
-            camera_html = f"""
-            <div class='camera-wrapper'>
-                <div class='camera-overlay-top-left'>● LIVE</div>
-                <div class='camera-overlay-top-right'>AI MONITORING</div>
-                <img src="data:image/jpeg;base64,{b64}" style="width:100%; display:block;" />
-                <div class='camera-overlay-bottom-left'>{face_status}</div>
-                <div class='camera-overlay-bottom-right'>{ear_status}</div>
-            </div>
-            """
-            camera_placeholder.markdown(camera_html, unsafe_allow_html=True)
-        
-        # Update UI Metrics (throttled)
-        if frame_count % 5 == 0:
             if not state["calibrated"]:
                 render_metrics("--", "--", "var(--warning)", 0, "WAIT", "var(--text-secondary)")
                 render_safety_state("CALIBRATING", "Establish your baseline before monitoring. Look at the camera with eyes open.")
@@ -573,14 +605,12 @@ if state["detection_active"]:
                 openness = int((state["current_ear"] / state["baseline_ear"]) * 100) if state["baseline_ear"] > 0 else 0
                 openness = min(100, max(0, openness))
                 risk_level, risk_color = get_risk_level(state["current_ear"], state["baseline_ear"])
-                
-                cnn_status = "READY" if result["cnn_available"] else "N/A"
-                cnn_color = "var(--success)" if result["cnn_available"] else "var(--text-secondary)"
-                
+                cnn_status = "READY" if result.get("cnn_available") else "N/A"
+                cnn_color = "var(--success)" if result.get("cnn_available") else "var(--text-secondary)"
                 render_metrics(openness, risk_level, risk_color, state["alert_count"], cnn_status, cnn_color)
-                
-                if result["eyes_closed"]:
-                    render_safety_state("DROWSY", "Please pay attention to the road. Consider taking a break if necessary.")
+
+                if result.get("eyes_closed"):
+                    render_safety_state("DROWSY", "Please pay attention to the road! Consider taking a break.")
                     driver_state, dcolor = "DROWSY", "var(--danger)"
                     rpct, rcolor = 100, "var(--danger)"
                 elif openness < 80:
@@ -588,33 +618,179 @@ if state["detection_active"]:
                     driver_state, dcolor = "WARNING", "var(--warning)"
                     rpct, rcolor = 60, "var(--warning)"
                 else:
-                    render_safety_state("ALERT", "Everything looks normal. Continue monitoring.")
+                    render_safety_state("ALERT", "Driver alert. Monitoring active.")
                     driver_state, dcolor = "ALERT", "var(--success)"
                     rpct, rcolor = 10, "var(--success)"
-                    
+
                 cnn_state = result.get("cnn_eye_state", "UNKNOWN")
                 cnn_conf = max(result.get("left_cnn_confidence", 0.0), result.get("right_cnn_confidence", 0.0))
-                
                 render_side_panels(driver_state, dcolor, risk_level, rpct, rcolor, cnn_state, result["ear"], result["mar"], cnn_conf)
-                
-            # Sync state dict for VoiceAssistant
-            dur_str = "00:00:00"
-            if state["session_start"]:
-                dur_str = format_duration(int(time.time() - state["session_start"]))
-                    
-            st.session_state.app_state_dict.update({
-                "monitoring": state["detection_active"],
-                "risk_level": risk_level if state["calibrated"] else "Unknown",
-                "drowsiness": result.get("eyes_closed", False),
-                "alert_count": state["alert_count"],
-                "session_duration": dur_str
-            })
-    
-    detector.close()
-    if cap:
-        cap.release()
-    st.session_state.session_logger.end_session()
+        else:
+            render_metrics("--", "--", "var(--text-secondary)", state["alert_count"], "WAIT", "var(--text-secondary)")
+            render_safety_state("ALERT", "WebRTC camera connected. Initializing face tracking...")
+            render_side_panels("ACTIVE", "var(--success)", "LOW", 10, "var(--success)", "WAIT", 0.0, 0.0, 0.0)
+    else:
+        state["detection_active"] = False
+        if state["session_start"]:
+            st.session_state.session_logger.end_session()
+            state["session_start"] = None
+        render_metrics("--", "--", "var(--text-secondary)", state["alert_count"], "WAIT", "var(--text-secondary)")
+        render_safety_state("IDLE", "Click START on the video streamer above to begin browser monitoring.")
+        render_side_panels("OFFLINE", "var(--text-secondary)", "UNKNOWN", 0, "var(--text-secondary)", "UNKNOWN", 0.0, 0.0, 0.0)
+
 else:
-    import time
-    time.sleep(0.5)
-    st.rerun()
+    # Local USB Camera (OpenCV) Mode
+    if not state["detection_active"]:
+        camera_placeholder.markdown("""
+        <div class='camera-wrapper' style='height:480px; display:flex; align-items:center; justify-content:center; flex-direction:column;'>
+            <div style='color:var(--text-secondary); font-size:3rem; margin-bottom:1rem;'>📷</div>
+            <div style='color:var(--text-secondary); font-weight:600; letter-spacing:0.1em;'>CAMERA OFFLINE</div>
+        </div>
+        """, unsafe_allow_html=True)
+        render_metrics("--", "--", "var(--text-secondary)", state["alert_count"], "WAIT", "var(--text-secondary)")
+        render_safety_state("IDLE", "System idle. Click START MONITORING to begin.")
+        render_side_panels("OFFLINE", "var(--text-secondary)", "UNKNOWN", 0, "var(--text-secondary)", "UNKNOWN", 0.0, 0.0, 0.0)
+
+    if state["detection_active"]:
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        
+        detector = DrowsyDetector()
+        if state["calibrated"]:
+            detector.baseline_ear = state["baseline_ear"]
+            detector.calibrated_threshold = state["baseline_ear"] * (ear_threshold / 100.0)
+            detector.is_calibrated = True
+        
+        last_alert = 0
+        frame_count = 0
+        
+        if not state["calibrated"]:
+            detector.start_calibration()
+        
+        while cap.isOpened() and state["detection_active"]:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame_count += 1
+            
+            try:
+                while True:
+                    cmd = st.session_state.command_queue.get_nowait()
+                    action = cmd.get("action")
+                    st.session_state.session_logger.log_event("VOICE_COMMAND", {"action": action})
+                    if action == "STOP":
+                        state["detection_active"] = False
+                        st.session_state.session_logger.end_session()
+                    elif action == "NOVA_STATUS":
+                        st.session_state.nova_status = cmd.get("status", "○ OFFLINE").upper()
+            except Empty:
+                pass
+            
+            config.STATIC_EAR_THRESHOLD = state.get("baseline_ear", 0.3) * (ear_threshold / 100.0)
+            config.EAR_CONSECUTIVE_FRAMES = frame_threshold
+            if state["calibrated"]:
+                detector.calibrated_threshold = config.STATIC_EAR_THRESHOLD
+
+            result = detector.process_frame(frame)
+            
+            if result["state"] == "CALIBRATING":
+                if detector.is_calibrated:
+                    state["baseline_ear"] = detector.baseline_ear
+                    state["calibrated"] = True
+            else:
+                state["current_ear"] = result["ear"]
+                alert_triggered_now = False
+                if result["eyes_closed"] or result["yawning"]:
+                    if time.time() - last_alert > 2:
+                        state["alert_count"] += 1
+                        play_alert_sound()
+                        last_alert = time.time()
+                        alert_triggered_now = True
+
+                risk_level, _ = get_risk_level(state["current_ear"], state.get("baseline_ear", 0.3))
+                st.session_state.session_logger.update_metrics(result, risk_level, alert_triggered_now)
+
+            h, w = frame.shape[:2]
+            if result["face_detected"] and result.get("landmarks"):
+                for idx in detector.LEFT_EYE + detector.RIGHT_EYE:
+                    lm = result["landmarks"][idx]
+                    x, y = int(lm.x * w), int(lm.y * h)
+                    cv2.circle(frame, (x, y), 1, (0, 212, 255), -1)
+            
+            frame_resized = cv2.resize(frame, (640, 480))
+            ret_jpg, buffer = cv2.imencode('.jpg', frame_resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            
+            if ret_jpg:
+                import base64
+                b64 = base64.b64encode(buffer).decode("utf-8")
+                
+                face_status = "FACE DETECTED" if result["face_detected"] else "NO FACE DETECTED"
+                ear_status = f"EAR {result['ear']:.2f}" if result["face_detected"] else ""
+                
+                camera_html = f"""
+                <div class='camera-wrapper'>
+                    <div class='camera-overlay-top-left'>● LIVE</div>
+                    <div class='camera-overlay-top-right'>AI MONITORING</div>
+                    <img src="data:image/jpeg;base64,{b64}" style="width:100%; display:block;" />
+                    <div class='camera-overlay-bottom-left'>{face_status}</div>
+                    <div class='camera-overlay-bottom-right'>{ear_status}</div>
+                </div>
+                """
+                camera_placeholder.markdown(camera_html, unsafe_allow_html=True)
+            
+            if frame_count % 5 == 0:
+                if not state["calibrated"]:
+                    render_metrics("--", "--", "var(--warning)", 0, "WAIT", "var(--text-secondary)")
+                    render_safety_state("CALIBRATING", "Establish your baseline before monitoring. Look at the camera with eyes open.")
+                    render_side_panels("CALIBRATING", "var(--warning)", "UNKNOWN", 0, "var(--warning)", "UNKNOWN", result["ear"], result["mar"], 0.0)
+                else:
+                    openness = int((state["current_ear"] / state["baseline_ear"]) * 100) if state["baseline_ear"] > 0 else 0
+                    openness = min(100, max(0, openness))
+                    risk_level, risk_color = get_risk_level(state["current_ear"], state["baseline_ear"])
+                    
+                    cnn_status = "READY" if result["cnn_available"] else "N/A"
+                    cnn_color = "var(--success)" if result["cnn_available"] else "var(--text-secondary)"
+                    
+                    render_metrics(openness, risk_level, risk_color, state["alert_count"], cnn_status, cnn_color)
+                    
+                    if result["eyes_closed"]:
+                        render_safety_state("DROWSY", "Please pay attention to the road. Consider taking a break if necessary.")
+                        driver_state, dcolor = "DROWSY", "var(--danger)"
+                        rpct, rcolor = 100, "var(--danger)"
+                    elif openness < 80:
+                        render_safety_state("WARNING", "Signs of reduced alertness detected.")
+                        driver_state, dcolor = "WARNING", "var(--warning)"
+                        rpct, rcolor = 60, "var(--warning)"
+                    else:
+                        render_safety_state("ALERT", "Everything looks normal. Continue monitoring.")
+                        driver_state, dcolor = "ALERT", "var(--success)"
+                        rpct, rcolor = 10, "var(--success)"
+                        
+                    cnn_state = result.get("cnn_eye_state", "UNKNOWN")
+                    cnn_conf = max(result.get("left_cnn_confidence", 0.0), result.get("right_cnn_confidence", 0.0))
+                    
+                    render_side_panels(driver_state, dcolor, risk_level, rpct, rcolor, cnn_state, result["ear"], result["mar"], cnn_conf)
+                    
+                dur_str = "00:00:00"
+                if state["session_start"]:
+                    dur_str = format_duration(int(time.time() - state["session_start"]))
+                        
+                st.session_state.app_state_dict.update({
+                    "monitoring": state["detection_active"],
+                    "risk_level": risk_level if state["calibrated"] else "Unknown",
+                    "drowsiness": result.get("eyes_closed", False),
+                    "alert_count": state["alert_count"],
+                    "session_duration": dur_str
+                })
+        
+        detector.close()
+        if cap:
+            cap.release()
+        st.session_state.session_logger.end_session()
+    else:
+        import time
+        time.sleep(0.5)
+        st.rerun()
